@@ -438,9 +438,8 @@ func shortAll(cs []string) []string {
 // the orchestrator only has the predicted label (ordering by gold fidelity would
 // describe a router we don't have). Returns the coverage-vs-delivered tradeoff
 // curve the routing policy is chosen from.
-func Sweep(scored []eval.Scored, predicted map[string]string) []Outcome {
+func Sweep(scored []eval.Scored, predicted map[string]string, extraPolicies ...Policy) []Outcome {
 	_, predByCat := CategoryFidelity(scored, predicted)
-	// order known categories by PREDICTED fidelity desc (ties: name)
 	cats := append([]string(nil), Categories...)
 	sort.Slice(cats, func(i, j int) bool {
 		fi, fj := predByCat[cats[i]].FidelityPct, predByCat[cats[j]].FidelityPct
@@ -449,9 +448,20 @@ func Sweep(scored []eval.Scored, predicted map[string]string) []Outcome {
 		}
 		return cats[i] < cats[j]
 	})
+	seen := map[string]bool{}
 	var outs []Outcome
 	for i := 1; i <= len(cats); i++ {
-		outs = append(outs, Simulate(scored, predicted, PolicyOf(cats[:i]...)))
+		p := PolicyOf(cats[:i]...)
+		key := strings.Join(p.sortedCats(), ",")
+		seen[key] = true
+		outs = append(outs, Simulate(scored, predicted, p))
+	}
+	for _, ep := range extraPolicies {
+		key := strings.Join(ep.sortedCats(), ",")
+		if !seen[key] {
+			seen[key] = true
+			outs = append(outs, Simulate(scored, predicted, ep))
+		}
 	}
 	return outs
 }

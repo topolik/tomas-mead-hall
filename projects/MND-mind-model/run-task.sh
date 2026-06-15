@@ -223,9 +223,9 @@ case "$cmd" in
       i=$((i+1))
     done
     if [[ -n "$tail_file" ]]; then
-      mnd ask-prompt --tail-file "$tail_file" --brain-dir brain --out data/ask.prompt --question-out data/ask.question >&2
+      mnd ask-prompt --tail-file "$tail_file" --brain-dir data --out data/ask.prompt --question-out data/ask.question >&2
     elif [[ -n "$question" ]]; then
-      mnd ask-prompt --question "$question" --brain-dir brain --out data/ask.prompt --question-out data/ask.question >&2
+      mnd ask-prompt --question "$question" --brain-dir data --out data/ask.prompt --question-out data/ask.question >&2
     else
       echo "usage: ./run-task.sh ask [--json] (--tail-file F | \"question\")" >&2; exit 1
     fi
@@ -303,7 +303,7 @@ case "$cmd" in
       --candidates data/eval/candidates.jsonl --out data/eval/cases.jsonl
     [[ -s "${SCRIPT_DIR}/data/eval/cases.jsonl" ]] || { echo "eval: no decision cases built from $n candidates — raise MND_EVAL_N" >&2; exit 1; }
     echo "[2/4] clone answering each case blind..." >&2
-    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir brain --out-dir data/eval/asks
+    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir data --out-dir data/eval/asks
     shopt -s nullglob
     for p in "${SCRIPT_DIR}"/data/eval/asks/case-*.prompt; do
       llm "$model" "$p" "${p%.prompt}.response" || echo "  $(basename "$p") ask failed — continuing" >&2
@@ -341,7 +341,7 @@ case "$cmd" in
     # moved fidelity, without rebuilding the case set. MND_EVAL_BRAIN points at a
     # dev brain copy (iteration 9 tooling).
     [[ -s "${SCRIPT_DIR}/data/eval/cases.jsonl" ]] || { echo "no data/eval/cases.jsonl — run eval first" >&2; exit 1; }
-    bdir="${MND_EVAL_BRAIN:-brain}"
+    bdir="${MND_EVAL_BRAIN:-data}"
     rm -rf "${SCRIPT_DIR}/data/eval/asks"; mkdir -p "${SCRIPT_DIR}/data/eval/asks"
     echo "[1/3] re-asking $(wc -l < "${SCRIPT_DIR}/data/eval/cases.jsonl") cases blind (brain=$bdir)..." >&2
     mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir "$bdir" --out-dir data/eval/asks
@@ -404,35 +404,46 @@ case "$cmd" in
     mnd route-classify-merge --response data/route/classify.response \
       --cases data/eval/cases.jsonl --out data/route/labels.jsonl
     echo "[2/3] simulating routing against verdicts ($sc)..." >&2
+    auto_cats="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern}"
     mnd route-sim --scored "$sc" --labels data/route/labels.jsonl \
+      --auto-cats "$auto_cats" \
       --out-md data/route/report.md --out-json data/route/sweep.json \
       --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "[3/3] report: ${SCRIPT_DIR}/data/route/report.md" >&2
     ;;
 
   retrain)
-    # Incremental learning pass: new moments only (processed ledger +
-    # self-exclusion do the filtering). Profiles regenerate only when the
-    # brain actually changed. Large profile prompt needs a pinned model
-    # (MND-011) — overridable via MND_GEMINI_MODEL.
     before="$(sha256sum "${SCRIPT_DIR}/data/insights.yaml" 2>/dev/null | cut -d' ' -f1 || true)"
     "$0" extract
     "$0" distill --model "$model" "${pass_args[@]}"
-    # feedback loop: Tomas's DSH comments (skipped gracefully without dsh.yaml)
     if [[ -f "${SCRIPT_DIR}/data/dsh.yaml" ]]; then
       "$0" learn --model "$model" || echo "learn failed — continuing retrain" >&2
     fi
-    # contradiction sweep: retire beliefs newer corrections supersede (MND-025).
-    # Runs after learn so fresh feedback insights win the conflicts they settle.
     "$0" contradictions --model "$model" || echo "contradiction sweep failed — continuing retrain" >&2
     after="$(sha256sum "${SCRIPT_DIR}/data/insights.yaml" 2>/dev/null | cut -d' ' -f1 || true)"
     if [[ "$before" == "$after" ]]; then
       echo "retrain: no brain changes — profiles unchanged" >&2
     else
       MND_GEMINI_MODEL="${MND_GEMINI_MODEL:-gemini-2.5-pro}" "$0" profile --model "$model"
-      echo "retrain: brain updated (new insights and/or retired contradictions), profiles regenerated" >&2
+      echo "retrain: brain updated — profiles regenerated" >&2
     fi
-    echo "retrain: brain updated — run ./backup.sh to persist" >&2
+    # mandatory fidelity eval after every retrain
+    echo "retrain: running fidelity eval..." >&2
+    "$0" eval --model "$model"
+    "$0" route-eval --model "$model"
+    auto_cats="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern}"
+    min_fidelity="${MND_FIDELITY_MIN_AUTO:-75}"
+    if mnd fidelity-check --auto-cats "$auto_cats" --min-auto "$min_fidelity" \
+         --eval-json data/eval/report.json --sweep-json data/route/sweep.json; then
+      echo "retrain: fidelity check passed" >&2
+    else
+      echo "retrain: ⚠ FIDELITY BELOW THRESHOLD — escalating to DSH" >&2
+      if [[ -f "${SCRIPT_DIR}/data/dsh.yaml" ]]; then
+        alert_msg="[MND fidelity-alert] Post-retrain fidelity dropped below ${min_fidelity}% for auto-set (${auto_cats}). Review data/eval/report.md and data/route/report.md."
+        mnd fidelity-alert --config data/dsh.yaml --message "$alert_msg" || echo "DSH alert failed" >&2
+      fi
+    fi
+    echo "retrain: done — run ./backup.sh to persist" >&2
     ;;
 
   watch-retrain)
