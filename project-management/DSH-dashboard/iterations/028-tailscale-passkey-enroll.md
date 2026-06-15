@@ -16,6 +16,8 @@ Two distinct problems behind one symptom — "can't get in from the phone":
 1. **"Can't use existing passkey" — inherent, not a bug.** Passkeys are bound to the
    RPID (the origin's host). The phone reaches DSH at `https://dsh-1.your-tailnet.ts.net`
    (RPID `dsh-1.your-tailnet.ts.net`). The usable phone creds are the platform
+   RPID (the origin's host). The phone reaches DSH at `https://dsh-1.your-tailnet.ts.net`
+   (RPID `dsh-1.your-tailnet.ts.net`). The usable phone creds are the platform
    "Android"/"Android 2" passkeys (DB ids 7, 8). If those are gone (new device / OS
    cleared them) the only synced cred is "1pass" (id 6, created 2026-05-27 via the
    laptop SSH tunnel) which is bound to **`localhost`** — 1Password syncs it to the
@@ -24,6 +26,7 @@ Two distinct problems behind one symptom — "can't get in from the phone":
    which is exactly what (2) was supposed to enable.
 
    Verified the server side is *correct*: through the real Tailscale serve path,
+   `GET /auth/passkey/login/begin` returns `rpId=dsh-1.your-tailnet.ts.net` (Tailscale
    `GET /auth/passkey/login/begin` returns `rpId=dsh-1.your-tailnet.ts.net` (Tailscale
    preserves the Host header), so a phone passkey bound to ts.net *does* work — login
    was never the broken part.
@@ -88,6 +91,9 @@ production container — confirmed its `StartedAt` unchanged):
 - Authenticated enroll → `{"url":"https://dsh-1.your-tailnet.ts.net/setup?token=…","qr":"data:image/png;base64,…","expires_in":600}`.
 - Enroll without CSRF → 403.
 - `/setup?token=<fresh>` → 200; `/setup/passkey/begin` via ts.net Host → `rp.id=dsh-1.your-tailnet.ts.net`; wrong token → 403.
+- Authenticated enroll → `{"url":"https://dsh-1.your-tailnet.ts.net/setup?token=…","qr":"data:image/png;base64,…","expires_in":600}`.
+- Enroll without CSRF → 403.
+- `/setup?token=<fresh>` → 200; `/setup/passkey/begin` via ts.net Host → `rp.id=dsh-1.your-tailnet.ts.net`; wrong token → 403.
 - QR decodes as a valid `256×256` PNG.
 
 Not coverable without hardware: the phone's actual `navigator.credentials.create()`
@@ -99,6 +105,8 @@ Not coverable without hardware: the phone's actual `navigator.credentials.create
    (or `make watch`).
 2. On the **laptop** (where the `localhost` passkey works via the SSH tunnel), open
    `http://localhost:9090/settings/passkeys` → **Add a new device** → a QR appears.
+3. **Scan the QR with the phone**, register a passkey (binds to `dsh-1.your-tailnet.ts.net`).
+4. From then on the phone logs in with that passkey at `https://dsh-1.your-tailnet.ts.net`.
 3. **Scan the QR with the phone**, register a passkey (binds to `dsh-1.your-tailnet.ts.net`).
 4. From then on the phone logs in with that passkey at `https://dsh-1.your-tailnet.ts.net`.
 
