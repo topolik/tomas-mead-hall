@@ -1,11 +1,11 @@
 # LLP — LLM Proxy (Gateway)
 
 - **Code:** LLP
-- **Status:** Implementation (Iteration 009) — SSE streaming on /v1/chat/completions (façade-level, LLP-018); iteration 008 merged to master (Tomas-accepted); awaiting Tomas's runtime verification of :4000 + push
+- **Status:** Reviewed (Iteration 010) — iterations 008–009 accepted by Tomas 2026-06-15; parked pending next work item
 - **Priority:** Q2 (Important, Not Urgent) — force-multiplier infrastructure for every agent
 - **Lead:** Developer
 - **Created:** 2026-06-12
-- **Last updated:** 2026-06-13
+- **Last updated:** 2026-06-15
 - **Current phase started:** 2026-06-12
 
 ## Overview
@@ -45,5 +45,5 @@ Log: `iterations/008-security-quota-healthz.md`.
 (`chat.completion.chunk` events, usage in the final chunk, `[DONE]`; LLP-018); failover/queue/
 usage identical to the non-streaming path; works for all impls incl. openllm (enabling it stays
 config-only, LLP-007). **63 tests pass (race-clean)**, live-verified via real gemini (`curl -N`).
-Log: `iterations/009-streaming.md`. **Awaiting Tomas's runtime verification of :4000 + push.**
+Log: `iterations/009-streaming.md`. **Reviewed and accepted by Tomas 2026-06-15** (`iterations/010-review.md`).
 Possible next: wire OpenLLM live (config), true pass-through streaming (LLP-018 revisit), DSH usage view.
