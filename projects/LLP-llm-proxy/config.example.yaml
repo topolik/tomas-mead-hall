@@ -48,12 +48,11 @@ impls:
     concurrency: 1
     price: { in: 0, out: 0 }
 
-  # Claude via the host CLI (reuses the host subscription — free). The [1m]
-  # suffix selects the 1M-context variant (verified accepted by `claude --model`).
+  # Claude via the host CLI (reuses the host subscription — free).
   claude:
     type: cli
     command: ["claude", "-p", "--output-format", "text"]
-    model_id: "claude-opus-4-8[1m]"      # Opus 4.8, 1M context
+    model_id: "claude-opus-4-8"
     model_flag: "--model"
     timeout: 300s
     cooldown: 60s
@@ -79,7 +78,7 @@ impls:
   claude2:
     type: cli
     command: ["claude", "-p", "--output-format", "text"]
-    model_id: "claude-opus-4-7[1m]"      # Opus 4.7, 1M context
+    model_id: "claude-opus-4-7"
     model_flag: "--model"
     timeout: 300s
     cooldown: 60s
