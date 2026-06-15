@@ -1,7 +1,7 @@
 # DSH — Iteration 028: Fix Tailscale phone passkey enrollment
 
 - **Start:** 2026-06-15
-- **End:** (pending review)
+- **End:** 2026-06-15
 - **Phase:** Ideation → Planning → Implementation (focused bug fix — combined)
 - **Branch:** `dsh-taila-fix`
 
