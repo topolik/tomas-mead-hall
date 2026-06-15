@@ -80,6 +80,10 @@ func main() {
 		err = cmdRouteClassifyMerge(os.Args[2:])
 	case "route-sim":
 		err = cmdRouteSim(os.Args[2:])
+	case "fidelity-check":
+		err = cmdFidelityCheck(os.Args[2:])
+	case "fidelity-alert":
+		err = cmdFidelityAlert(os.Args[2:])
 	case "stats":
 		err = cmdStats(os.Args[2:])
 	default:
@@ -115,7 +119,9 @@ func usage() {
   eval-report       --scored F --provenance S --out-md F --out-json F
   route-classify-prompt --cases F --out F
   route-classify-merge  --response F --cases F --out F
-  route-sim             --scored F --labels F --out-md F --out-json F
+  route-sim             --scored F --labels F --out-md F --out-json F [--auto-cats S]
+  fidelity-check  --eval-json F --sweep-json F --auto-cats S --min-auto N
+  fidelity-alert  --config F --message S
   stats           --moments F`)
 	os.Exit(2)
 }
@@ -351,7 +357,7 @@ func cmdAskPrompt(args []string) error {
 	fs := flag.NewFlagSet("ask-prompt", flag.ExitOnError)
 	question := fs.String("question", "", "the question an agent would ask Tomas")
 	tailFile := fs.String("tail-file", "", "terminal-tail file — framed and datamarked as the question (orchestrate path, MND-013)")
-	brainDir := fs.String("brain-dir", "brain", "brain dir (insights.yaml + profiles/)")
+	brainDir := fs.String("brain-dir", "data", "brain dir (insights.yaml + profiles/)")
 	out := fs.String("out", "data/ask.prompt", "prompt output")
 	topk := fs.Int("topk", 12, "retrieved evidence insights")
 	questionOut := fs.String("question-out", "", "also write the final question text here (for feedback-post)")
@@ -802,7 +808,7 @@ func cmdEvalBuildMerge(args []string) error {
 func cmdEvalAskPrompts(args []string) error {
 	fs := flag.NewFlagSet("eval-ask-prompts", flag.ExitOnError)
 	casesPath := fs.String("cases", "data/eval/cases.jsonl", "cases JSONL")
-	brainDir := fs.String("brain-dir", "brain", "brain dir")
+	brainDir := fs.String("brain-dir", "data", "brain dir")
 	outDir := fs.String("out-dir", "data/eval/asks", "per-case ask prompt dir")
 	topk := fs.Int("topk", 12, "retrieved evidence insights")
 	fs.Parse(args)
@@ -962,7 +968,7 @@ func cmdEvalReport(args []string) error {
 func cmdEvalCalibration(args []string) error {
 	fs := flag.NewFlagSet("eval-calibration", flag.ExitOnError)
 	scoredPath := fs.String("scored", "data/eval/scored.jsonl", "scored JSONL")
-	brainDir := fs.String("brain-dir", "brain", "brain dir")
+	brainDir := fs.String("brain-dir", "data", "brain dir")
 	k := fs.Int("k", 12, "retrieval depth for signals")
 	fs.Parse(args)
 
@@ -1169,6 +1175,7 @@ func cmdRouteSim(args []string) error {
 	labelsPath := fs.String("labels", "data/route/labels.jsonl", "predicted categories")
 	outMD := fs.String("out-md", "data/route/report.md", "markdown report")
 	outJSON := fs.String("out-json", "data/route/sweep.json", "machine-readable sweep")
+	autoCats := fs.String("auto-cats", "", "comma-separated policy to always include in sweep")
 	at := fs.String("at", "", "generated-at timestamp")
 	fs.Parse(args)
 
@@ -1197,12 +1204,112 @@ func cmdRouteSim(args []string) error {
 	if err := os.WriteFile(*outMD, []byte(md), 0o644); err != nil {
 		return err
 	}
-	sweep := route.Sweep(scored, predicted)
+	var extras []route.Policy
+	if *autoCats != "" {
+		extras = append(extras, route.PolicyOf(strings.Split(*autoCats, ",")...))
+	}
+	sweep := route.Sweep(scored, predicted, extras...)
 	jb, _ := json.MarshalIndent(sweep, "", "  ")
 	if err := os.WriteFile(*outJSON, jb, 0o644); err != nil {
 		return err
 	}
 	fmt.Printf("route simulation over %d cases -> %s\n", len(scored), *outMD)
+	return nil
+}
+
+func cmdFidelityCheck(args []string) error {
+	fs := flag.NewFlagSet("fidelity-check", flag.ExitOnError)
+	evalJSON := fs.String("eval-json", "data/eval/report.json", "eval report JSON")
+	sweepJSON := fs.String("sweep-json", "data/route/sweep.json", "route sweep JSON")
+	autoCats := fs.String("auto-cats", "correction_pattern,direction_pattern", "comma-separated auto-answer categories")
+	minAuto := fs.Float64("min-auto", 75, "minimum delivered fidelity (%) for auto-answered categories")
+	fs.Parse(args)
+
+	eb, err := os.ReadFile(*evalJSON)
+	if err != nil {
+		return fmt.Errorf("read eval report: %w", err)
+	}
+	var st eval.Stats
+	if err := json.Unmarshal(eb, &st); err != nil {
+		return fmt.Errorf("parse eval report: %w", err)
+	}
+
+	sb, err := os.ReadFile(*sweepJSON)
+	if err != nil {
+		return fmt.Errorf("read sweep: %w", err)
+	}
+	var sweep []route.Outcome
+	if err := json.Unmarshal(sb, &sweep); err != nil {
+		return fmt.Errorf("parse sweep: %w", err)
+	}
+
+	wantPolicyCats := strings.Split(*autoCats, ",")
+	sort.Strings(wantPolicyCats)
+
+	var matched *route.Outcome
+	for i := range sweep {
+		got := append([]string(nil), sweep[i].Policy...)
+		sort.Strings(got)
+		if strings.Join(got, ",") == strings.Join(wantPolicyCats, ",") {
+			matched = &sweep[i]
+			break
+		}
+	}
+
+	var alerts []string
+
+	if matched == nil {
+		alerts = append(alerts, fmt.Sprintf("no sweep outcome matches policy %v — cannot verify auto-set fidelity", wantPolicyCats))
+	} else {
+		fmt.Fprintf(os.Stderr, "fidelity-check: auto-set delivered=%.0f%% (threshold %.0f%%), coverage=%.0f%%, judgment_leaked=%d\n",
+			matched.DeliveredFidelityPred, *minAuto, matched.CoveragePred, matched.JudgmentLeaked)
+		if matched.DeliveredFidelityPred < *minAuto {
+			alerts = append(alerts, fmt.Sprintf(
+				"auto-set fidelity DEGRADED: %.0f%% < %.0f%% threshold (policy: %s, coverage: %.0f%%)",
+				matched.DeliveredFidelityPred, *minAuto, strings.Join(matched.Policy, "+"), matched.CoveragePred))
+		}
+		if matched.JudgmentLeaked > 0 {
+			alerts = append(alerts, fmt.Sprintf(
+				"JUDGMENT LEAK: %d judgment-category questions routed to auto-answer (fidelity %.0f%%)",
+				matched.JudgmentLeaked, matched.JudgmentLeakedFidelity))
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "fidelity-check: overall=%.0f%% over %d cases\n", st.FidelityPct, st.Total)
+
+	if len(alerts) == 0 {
+		fmt.Println("OK")
+		return nil
+	}
+	for _, a := range alerts {
+		fmt.Println("ALERT: " + a)
+	}
+	return fmt.Errorf("fidelity check failed: %d alert(s)", len(alerts))
+}
+
+func cmdFidelityAlert(args []string) error {
+	fs := flag.NewFlagSet("fidelity-alert", flag.ExitOnError)
+	cfgPath := fs.String("config", "data/dsh.yaml", "DSH client config")
+	message := fs.String("message", "", "alert message")
+	fs.Parse(args)
+
+	if *message == "" {
+		return fmt.Errorf("--message is required")
+	}
+	cfg, err := dsh.LoadConfig(*cfgPath)
+	if err != nil {
+		return err
+	}
+	client := dsh.NewClient(cfg)
+	if err := client.PostNotification(dsh.Notification{
+		ProjectCode: "MND",
+		Message:     *message,
+		Type:        "action_needed",
+		Priority:    "Q1",
+	}); err != nil {
+		return err
+	}
+	fmt.Println("fidelity alert posted to DSH")
 	return nil
 }
 
