@@ -11,6 +11,8 @@ func TestExternalOrigin(t *testing.T) {
 		{"single localhost", "http://localhost:9090", "http://localhost:9090"},
 		{"localhost then external", "http://localhost:9090,https://dsh-1.your-tailnet.ts.net", "https://dsh-1.your-tailnet.ts.net"},
 		{"external then localhost", "https://dsh-1.your-tailnet.ts.net,http://localhost:9090", "https://dsh-1.your-tailnet.ts.net"},
+		{"localhost then external", "http://localhost:9090,https://dsh-1.your-tailnet.ts.net", "https://dsh-1.your-tailnet.ts.net"},
+		{"external then localhost", "https://dsh-1.your-tailnet.ts.net,http://localhost:9090", "https://dsh-1.your-tailnet.ts.net"},
 		{"127.0.0.1 is loopback", "http://127.0.0.1:9090,https://x.ts.net", "https://x.ts.net"},
 		{"ipv6 loopback", "http://[::1]:9090,https://x.ts.net", "https://x.ts.net"},
 		{"spaces trimmed", " http://localhost:9090 , https://x.ts.net ", "https://x.ts.net"},

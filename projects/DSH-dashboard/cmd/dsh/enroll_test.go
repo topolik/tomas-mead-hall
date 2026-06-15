@@ -15,6 +15,7 @@ import (
 )
 
 const tsOrigin = "https://dsh-1.your-tailnet.ts.net"
+const tsOrigin = "https://dsh-1.your-tailnet.ts.net"
 
 // setupEnrollServer builds a server that mirrors the real multi-origin
 // (localhost + Tailscale) deployment, with a setup token wired in and an
@@ -193,6 +194,12 @@ func TestEnrollDevice_FullFlow(t *testing.T) {
 	}
 	if rpid != "dsh-1.your-tailnet.ts.net" {
 		t.Fatalf("rpId = %q, want dsh-1.your-tailnet.ts.net", rpid)
+	code, rpid := rpIDFor(t, srv, "/setup/passkey/begin?token="+tok, "dsh-1.your-tailnet.ts.net")
+	if code != http.StatusOK {
+		t.Fatalf("begin status = %d, want 200", code)
+	}
+	if rpid != "dsh-1.your-tailnet.ts.net" {
+		t.Fatalf("rpId = %q, want dsh-1.your-tailnet.ts.net", rpid)
 	}
 
 	// 4. A wrong token is rejected.
@@ -225,6 +232,7 @@ func TestWAForRequestDeterministicFallback(t *testing.T) {
 // TestWAForRequest_KnownHostsExact confirms exact host matches still win.
 func TestWAForRequest_KnownHostsExact(t *testing.T) {
 	srv, _, _ := setupEnrollServer(t)
+	if _, rpid := rpIDFor(t, srv, "/auth/passkey/login/begin", "dsh-1.your-tailnet.ts.net"); rpid != "dsh-1.your-tailnet.ts.net" {
 	if _, rpid := rpIDFor(t, srv, "/auth/passkey/login/begin", "dsh-1.your-tailnet.ts.net"); rpid != "dsh-1.your-tailnet.ts.net" {
 		t.Errorf("ts.net host rpId = %q", rpid)
 	}
