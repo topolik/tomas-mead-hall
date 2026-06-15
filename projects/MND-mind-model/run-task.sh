@@ -412,6 +412,71 @@ case "$cmd" in
     echo "[3/3] report: ${SCRIPT_DIR}/data/route/report.md" >&2
     ;;
 
+  # --- Embedding (iter 11) ----------------------------------------------------
+
+  embed-start)
+    # Start Ollama with GPU, pull model if needed. Idempotent.
+    docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --profile embed up -d ollama
+    echo "waiting for Ollama..." >&2
+    for i in $(seq 1 30); do
+      curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1 && break
+      sleep 1
+    done
+    curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1 || { echo "Ollama failed to start" >&2; exit 1; }
+    # Pull model if not present
+    embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+    if ! curl -s http://localhost:11434/api/tags | grep -q "\"$embed_model\""; then
+      echo "pulling $embed_model..." >&2
+      curl -s http://localhost:11434/api/pull -d "{\"name\":\"$embed_model\"}" | tail -1
+    fi
+    echo "Ollama ready (model: $embed_model)" >&2
+    ;;
+
+  embed-batch)
+    # Embed all active insights → data/embeddings.json. Delta: only new/changed.
+    embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+    embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+    # Ensure Ollama is up
+    curl -s --max-time 2 "$embed_url/api/tags" >/dev/null 2>&1 || "$0" embed-start
+    echo "[1/3] loading insights and existing embeddings..." >&2
+    mnd embed-plan --insights data/insights.yaml --embeddings data/embeddings.json \
+      --model "$embed_model" --texts-out data/embed-batch.jsonl
+    n="$(wc -l < "${SCRIPT_DIR}/data/embed-batch.jsonl" 2>/dev/null || echo 0)"
+    if [[ "$n" -eq 0 ]]; then
+      echo "embed-batch: all insights already embedded — nothing to do" >&2
+      exit 0
+    fi
+    echo "[2/3] embedding $n insights via $embed_model..." >&2
+    # Batch in chunks of 100 (Ollama handles large batches but be safe)
+    > "${SCRIPT_DIR}/data/embed-responses.jsonl"
+    while IFS= read -r batch; do
+      curl -s "$embed_url/api/embed" -d "$batch" >> "${SCRIPT_DIR}/data/embed-responses.jsonl"
+      echo "" >> "${SCRIPT_DIR}/data/embed-responses.jsonl"
+    done < "${SCRIPT_DIR}/data/embed-batch.jsonl"
+    echo "[3/3] merging into embeddings store..." >&2
+    mnd embed-merge --responses data/embed-responses.jsonl --plan data/embed-batch.jsonl \
+      --embeddings data/embeddings.json --model "$embed_model"
+    echo "embed-batch: done ($(grep -c '"id"' "${SCRIPT_DIR}/data/embeddings.json" 2>/dev/null || echo 0) total vectors)" >&2
+    ;;
+
+  embed-query)
+    # Embed a single question → stdout JSON vector.
+    embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+    embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+    q=""
+    i=0
+    while [[ $i -lt ${#pass_args[@]} ]]; do
+      case "${pass_args[$i]}" in
+        --question-file) i=$((i+1)); q="$(cat "${pass_args[$i]}")" ;;
+        *) q="${pass_args[$i]}" ;;
+      esac
+      i=$((i+1))
+    done
+    [[ -n "$q" ]] || { echo "usage: ./run-task.sh embed-query (--question-file F | \"question\")" >&2; exit 1; }
+    resp="$(curl -s "$embed_url/api/embed" -d "$(jq -n --arg m "$embed_model" --arg t "$q" '{model:$m, input:[$t]}')")"
+    echo "$resp" | jq -c '.embeddings[0]'
+    ;;
+
   retrain)
     before="$(sha256sum "${SCRIPT_DIR}/data/insights.yaml" 2>/dev/null | cut -d' ' -f1 || true)"
     "$0" extract

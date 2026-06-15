@@ -78,7 +78,7 @@ New `run-task.sh` commands:
 - `embed-batch` — embed all active insights → `data/embeddings.json` (delta: skip insights already embedded with same model)
 - `embed-query` — embed a single question → stdout JSON
 
-Selection: `MND_EMBED=auto|gemini|ollama` (auto: try gemini → ollama → fail)
+Selection: `MND_EMBED=auto|ollama|gemini` (auto: try ollama → gemini → fail). Tomas: start with Ollama, no API dependency.
 
 ### Step 3: Replace BM25 in ask pipeline
 
@@ -170,14 +170,14 @@ The `classify` LLM call is eliminated. The embed call replaces it (cheaper, fast
 ## Order of implementation
 
 1. `internal/embed` + tests (T71–T74) — pure Go, no external calls
-2. `embed-batch` + `embed-query` in run-task.sh (Gemini REST first)
+2. Ollama Docker setup + `embed-batch` + `embed-query` in run-task.sh (Ollama first, Gemini fallback)
 3. `ask-prompt-embed` + evidence metadata (T75, T78)
 4. A/B measurement — does embedding retrieval improve fidelity?
 5. Evidence gate in orchestrate.sh (T76)
 6. Routing measurement — does evidence-derived gate reduce judgment leaks?
 7. Retrain integration
 8. Docs update
-9. Ollama (only if Gemini unavailable or quality insufficient)
+9. Gemini REST tier (fallback if Ollama unavailable)
 
 ## Decisions
 

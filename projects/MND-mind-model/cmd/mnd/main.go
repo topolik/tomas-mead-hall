@@ -17,6 +17,7 @@ import (
 	"github.com/topolik/mnd-mind-model/internal/dedup"
 	"github.com/topolik/mnd-mind-model/internal/distill"
 	"github.com/topolik/mnd-mind-model/internal/dsh"
+	"github.com/topolik/mnd-mind-model/internal/embed"
 	"github.com/topolik/mnd-mind-model/internal/eval"
 	"github.com/topolik/mnd-mind-model/internal/extract"
 	"github.com/topolik/mnd-mind-model/internal/feedback"
@@ -80,6 +81,12 @@ func main() {
 		err = cmdRouteClassifyMerge(os.Args[2:])
 	case "route-sim":
 		err = cmdRouteSim(os.Args[2:])
+	case "embed-plan":
+		err = cmdEmbedPlan(os.Args[2:])
+	case "embed-merge":
+		err = cmdEmbedMerge(os.Args[2:])
+	case "embed-evidence":
+		err = cmdEmbedEvidence(os.Args[2:])
 	case "fidelity-check":
 		err = cmdFidelityCheck(os.Args[2:])
 	case "fidelity-alert":
@@ -120,6 +127,9 @@ func usage() {
   route-classify-prompt --cases F --out F
   route-classify-merge  --response F --cases F --out F
   route-sim             --scored F --labels F --out-md F --out-json F [--auto-cats S]
+  embed-plan      --insights F --embeddings F --model S --texts-out F
+  embed-merge     --responses F --plan F --embeddings F --model S
+  embed-evidence  --embeddings F --query-vec F --insights F [--topk N] --out F
   fidelity-check  --eval-json F --sweep-json F --auto-cats S --min-auto N
   fidelity-alert  --config F --message S
   stats           --moments F`)
@@ -1214,6 +1224,208 @@ func cmdRouteSim(args []string) error {
 		return err
 	}
 	fmt.Printf("route simulation over %d cases -> %s\n", len(scored), *outMD)
+	return nil
+}
+
+// cmdEmbedPlan determines which active insights need (re-)embedding and writes
+// batched Ollama request bodies to a JSONL file. Delta: skip IDs already in the
+// store with the same model.
+func cmdEmbedPlan(args []string) error {
+	fs := flag.NewFlagSet("embed-plan", flag.ExitOnError)
+	insightsPath := fs.String("insights", "data/insights.yaml", "insights file")
+	embeddingsPath := fs.String("embeddings", "data/embeddings.json", "embeddings store")
+	model := fs.String("model", "nomic-embed-text", "embedding model name")
+	textsOut := fs.String("texts-out", "data/embed-batch.jsonl", "output: one Ollama request JSON per line")
+	fs.Parse(args)
+
+	bf, err := brain.LoadInsights(*insightsPath)
+	if err != nil {
+		return err
+	}
+	active := distill.Active(bf.Insights)
+	store, err := embed.LoadStore(*embeddingsPath)
+	if err != nil {
+		return err
+	}
+
+	// Prune embeddings for insights that no longer exist or are superseded.
+	activeIDs := make(map[string]bool, len(active))
+	for _, in := range active {
+		activeIDs[in.ID] = true
+	}
+	pruned := store.Prune(activeIDs)
+	if pruned > 0 {
+		fmt.Fprintf(os.Stderr, "embed-plan: pruned %d stale embeddings\n", pruned)
+		if err := embed.SaveStore(*embeddingsPath, store); err != nil {
+			return err
+		}
+	}
+
+	// Find insights needing embedding (not in store, or model changed).
+	existing := store.IDs()
+	var need []distill.Insight
+	for _, in := range active {
+		if existing[in.ID] && store.Model == *model {
+			continue
+		}
+		need = append(need, in)
+	}
+	fmt.Fprintf(os.Stderr, "embed-plan: %d active insights, %d already embedded, %d to embed\n",
+		len(active), len(active)-len(need), len(need))
+
+	// Write batched Ollama requests (up to 100 per line).
+	f, err := os.Create(*textsOut)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	batchSize := 100
+	for i := 0; i < len(need); i += batchSize {
+		end := i + batchSize
+		if end > len(need) {
+			end = len(need)
+		}
+		batch := need[i:end]
+		texts := make([]string, len(batch))
+		ids := make([]string, len(batch))
+		for j, in := range batch {
+			texts[j] = embed.InsightText(in)
+			ids[j] = in.ID
+		}
+		req := struct {
+			Model string   `json:"model"`
+			Input []string `json:"input"`
+			IDs   []string `json:"ids"`
+		}{*model, texts, ids}
+		jb, _ := json.Marshal(req)
+		f.Write(jb)
+		f.WriteString("\n")
+	}
+	return nil
+}
+
+// cmdEmbedMerge reads Ollama responses and merges vectors into the store.
+func cmdEmbedMerge(args []string) error {
+	fs := flag.NewFlagSet("embed-merge", flag.ExitOnError)
+	responsesPath := fs.String("responses", "data/embed-responses.jsonl", "Ollama responses JSONL")
+	planPath := fs.String("plan", "data/embed-batch.jsonl", "plan JSONL (carries ids)")
+	embeddingsPath := fs.String("embeddings", "data/embeddings.json", "embeddings store")
+	model := fs.String("model", "nomic-embed-text", "embedding model name")
+	fs.Parse(args)
+
+	store, err := embed.LoadStore(*embeddingsPath)
+	if err != nil {
+		return err
+	}
+	store.Model = *model
+
+	// Read plan to get IDs per batch.
+	planData, err := os.ReadFile(*planPath)
+	if err != nil {
+		return err
+	}
+	var allIDs [][]string
+	for _, line := range strings.Split(strings.TrimSpace(string(planData)), "\n") {
+		if line == "" {
+			continue
+		}
+		var req struct {
+			IDs []string `json:"ids"`
+		}
+		if err := json.Unmarshal([]byte(line), &req); err != nil {
+			return fmt.Errorf("plan line: %w", err)
+		}
+		allIDs = append(allIDs, req.IDs)
+	}
+
+	// Read responses — one Ollama response per plan batch.
+	respData, err := os.ReadFile(*responsesPath)
+	if err != nil {
+		return err
+	}
+	respLines := strings.Split(strings.TrimSpace(string(respData)), "\n")
+	if len(respLines) != len(allIDs) {
+		return fmt.Errorf("response count (%d) != plan batch count (%d)", len(respLines), len(allIDs))
+	}
+
+	total := 0
+	for i, line := range respLines {
+		if line == "" {
+			continue
+		}
+		vecs, err := embed.ParseOllamaResponse([]byte(line))
+		if err != nil {
+			return fmt.Errorf("batch %d: %w", i, err)
+		}
+		ids := allIDs[i]
+		if len(vecs) != len(ids) {
+			return fmt.Errorf("batch %d: %d vectors for %d ids", i, len(vecs), len(ids))
+		}
+		for j, v := range vecs {
+			store.Set(ids[j], v)
+			total++
+		}
+		if store.Dim == 0 && len(vecs) > 0 {
+			store.Dim = len(vecs[0])
+		}
+	}
+	fmt.Fprintf(os.Stderr, "embed-merge: added %d vectors (total store: %d, dim: %d)\n",
+		total, len(store.Entries), store.Dim)
+	return embed.SaveStore(*embeddingsPath, store)
+}
+
+// cmdEmbedEvidence performs embedding-based retrieval and writes evidence metadata.
+func cmdEmbedEvidence(args []string) error {
+	fs := flag.NewFlagSet("embed-evidence", flag.ExitOnError)
+	embeddingsPath := fs.String("embeddings", "data/embeddings.json", "embeddings store")
+	queryVecPath := fs.String("query-vec", "data/ask.queryvec.json", "query vector JSON file")
+	insightsPath := fs.String("insights", "data/insights.yaml", "insights file")
+	topk := fs.Int("topk", 12, "number of top matches")
+	out := fs.String("out", "data/ask.evidence.json", "evidence metadata output")
+	insightsOut := fs.String("insights-out", "", "write retrieved insight IDs (one per line)")
+	fs.Parse(args)
+
+	store, err := embed.LoadStore(*embeddingsPath)
+	if err != nil {
+		return fmt.Errorf("load embeddings: %w", err)
+	}
+	qvData, err := os.ReadFile(*queryVecPath)
+	if err != nil {
+		return fmt.Errorf("load query vector: %w", err)
+	}
+	var queryVec embed.Vector
+	if err := json.Unmarshal(qvData, &queryVec); err != nil {
+		return fmt.Errorf("parse query vector: %w", err)
+	}
+	bf, err := brain.LoadInsights(*insightsPath)
+	if err != nil {
+		return err
+	}
+	active := distill.Active(bf.Insights)
+	matches := store.TopK(queryVec, *topk, active)
+
+	ev := embed.ComputeEvidence(matches)
+	jb, _ := json.MarshalIndent(ev, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(*out, jb, 0o644); err != nil {
+		return err
+	}
+
+	// Also write the matched insights for the ask prompt.
+	if *insightsOut != "" {
+		var ids []string
+		for _, m := range matches {
+			ids = append(ids, m.Insight.ID)
+		}
+		if err := os.WriteFile(*insightsOut, []byte(strings.Join(ids, "\n")+"\n"), 0o644); err != nil {
+			return err
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "embed-evidence: %d matches, mean_sim=%.2f, dominant=%s (%.0f%%)\n",
+		len(matches), ev.MeanSimilarity, ev.DominantCategory, ev.DominantFraction*100)
 	return nil
 }
 

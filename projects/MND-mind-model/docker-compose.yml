@@ -15,3 +15,21 @@ services:
       # Working data (gitignored) and the distilled brain (committed)
       - ./data:/app/data
       - ./brain:/app/brain
+
+  ollama:
+    image: ollama/ollama
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ollama-models:/root/.ollama
+    profiles:
+      - embed
+
+volumes:
+  ollama-models:
