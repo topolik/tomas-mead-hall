@@ -38,7 +38,7 @@ llp_complete() {
 }
 
 # Ensure bind-mounted files exist (Docker creates directories for missing mounts)
-[[ -f "${SCRIPT_DIR}/rules.yaml" ]] || { echo "error: rules.yaml not found — see README.md for setup" >&2; exit 1; }
+[[ -f "${SCRIPT_DIR}/data/rules.yaml" ]] || { echo "error: rules.yaml not found — see README.md for setup" >&2; exit 1; }
 
 if [[ $# -eq 0 ]]; then
   echo "Usage: ./run-task.sh <command> [args...]" >&2
@@ -76,7 +76,7 @@ read_config() {
   python3 -c "
 import yaml, sys
 try:
-    c = yaml.safe_load(open('${SCRIPT_DIR}/rules.yaml'))
+    c = yaml.safe_load(open('${SCRIPT_DIR}/data/rules.yaml'))
     keys = '${key}'.split('.')
     v = c
     for k in keys:
@@ -418,8 +418,8 @@ run_apply_rules() {
   docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm -T gml apply-rules > "$out_file"
 
   if [[ -s "$out_file" ]]; then
-    cp "$out_file" "${SCRIPT_DIR}/rules.yaml"
-    chmod 644 "${SCRIPT_DIR}/rules.yaml"
+    cp "$out_file" "${SCRIPT_DIR}/data/rules.yaml"
+    chmod 644 "${SCRIPT_DIR}/data/rules.yaml"
     echo "[apply-rules] rules.yaml updated" >&2
   else
     echo "[apply-rules] no approved rules to apply — rules.yaml unchanged" >&2
@@ -520,8 +520,8 @@ if [[ "$1" == "apply-rules" ]]; then
   docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm -T gml merge-plans-apply < "$GML_ANALYSIS_FILE" > "$RULES_OUTPUT"
 
   if [[ -s "$RULES_OUTPUT" ]]; then
-    cp "$RULES_OUTPUT" "${SCRIPT_DIR}/rules.yaml"
-    chmod 644 "${SCRIPT_DIR}/rules.yaml"
+    cp "$RULES_OUTPUT" "${SCRIPT_DIR}/data/rules.yaml"
+    chmod 644 "${SCRIPT_DIR}/data/rules.yaml"
     echo "[apply-rules] rules.yaml updated" >&2
   fi
   rm -f "$RULES_OUTPUT"

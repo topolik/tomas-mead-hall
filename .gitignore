@@ -35,5 +35,8 @@ projects/*/node_modules/
 *.crt
 *.srl
 
+# Personal task list (tracked in DSH dashboard)
+todo.txt
+
 # Logs
 *.log

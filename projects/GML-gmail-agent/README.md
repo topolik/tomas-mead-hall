@@ -26,7 +26,7 @@ graph TD
 
 **Knowledge** learns from email behavior and DSH feedback, distills patterns into `knowledge.yaml`, and proposes new archive rules for review in DSH.
 
-**Rules** executes approved rules from `rules.yaml` — archiving emails by sender, label, age, or content filter. Each rule run narrows what the next analysis sees.
+**Rules** executes approved rules from `data/rules.yaml` — archiving emails by sender, label, age, or content filter. Each rule run narrows what the next analysis sees.
 
 ## Commands
 
@@ -141,7 +141,7 @@ Requires: `claude` CLI (or `npx @google/gemini-cli`) on host for analysis/knowle
 
 ## Rules
 
-Edit `rules.yaml` to configure archive rules, or let the knowledge pipeline propose them.
+Edit `data/rules.yaml` to configure archive rules, or let the knowledge pipeline propose them.
 
 Rule types:
 - `archive_by_sender` — archive from matching sender patterns (plain email or regex), with optional `filter` (Gmail search fragment) and `require_reply` (thread condition)
@@ -175,7 +175,7 @@ Rule types:
 3. Run `./setup.sh` — it auto-provisions a DSH OAuth2 client and writes `data/dsh.yaml`
 4. Or manually: `cp dsh.yaml.example data/dsh.yaml`, fill credentials from DSH `/admin/clients`, `chmod 600 data/dsh.yaml`
 
-DSH credentials live in `data/dsh.yaml` (gitignored, `chmod 600`), separate from `rules.yaml` which contains only rule configuration.
+DSH credentials live in `data/dsh.yaml` (gitignored, `chmod 600`), separate from `data/rules.yaml` which contains only rule configuration.
 
 ## Backup & Restore
 
@@ -195,7 +195,7 @@ Passphrase via `$BACKUP_PASSPHRASE` or interactive prompt. Backups go to `~/.loc
 - Token refresh happens in Go heap via HTTPS to `oauth2.googleapis.com`
 - Archive = removes INBOX label only + adds `GML/archived` tracing label. Never trashes or deletes. `gmail.modify` scope cannot hard-delete.
 - **No-send invariant**: `gmail.modify` grants compose/send permission (Gmail has no narrower scope for archiving). The codebase never calls send/draft endpoints — enforced by allowlist tests in `internal/gws/gws_test.go` that run on every `go test ./...`. **Review diffs to `gws_test.go` carefully** — an AI agent can modify the test alongside the code to bypass the check.
-- `mode: readonly` in `rules.yaml` blocks archiving at code level
+- `mode: readonly` in `data/rules.yaml` blocks archiving at code level
 - `--dry-run` flag for safe preview before any mutations
 
 ### Prompt Injection Defense (5 layers)

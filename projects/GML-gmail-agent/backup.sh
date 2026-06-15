@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # backup.sh — encrypted backup of GML's learned state.
-# Backs up: data/ (knowledge, dsh credentials, state files) + rules.yaml
+# Backs up: data/ (knowledge, dsh credentials, rules, state files)
 #
 # Passphrase: $BACKUP_PASSPHRASE env var, or prompted interactively.
 # Output:     $BACKUP_DIR/gml-<timestamp>.tar.gz.enc (default ~/.local/share/gml/backups/)
@@ -20,7 +20,7 @@ fi
 mkdir -p "$BACKUP_DIR"
 
 FILES=()
-for f in data/knowledge.yaml data/dsh.yaml rules.yaml data/.gml-last-*; do
+for f in data/knowledge.yaml data/dsh.yaml data/rules.yaml data/.gml-last-*; do
   [ -e "$f" ] && FILES+=("$f")
 done
 

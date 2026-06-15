@@ -13,41 +13,24 @@
 # readwrite: enables archiving — also requires re-running setup.sh without --readonly
 mode: readonly
 
-# Scheduler configuration (used by `gml serve`)
+# Rules daemon scheduling
 schedule:
+  lookback_hours: 72
   interval_minutes: 360   # run rules every 6 hours
 
 rules:
-  # Rules will be defined in later project stages.
+  # Rules will be populated by the knowledge pipeline (propose → approve → apply-rules).
+  # You can also add rules manually. Examples:
   #
   # - name: "old promotions"
   #   type: archive_by_age
   #   params:
   #     days: 30
   #     state: read
+  #     label: CATEGORY_PROMOTIONS
   #
-  # - name: "old read mail"
-  #   type: archive_by_age
-  #   params:
-  #     days: 90
-  #     state: read
-
-  # Example: archive all automated notifications from a sender pattern
-  # - name: "github notifications"
+  # - name: "noreply senders"
   #   type: archive_by_sender
   #   params:
-  #     patterns:
-  #       - "notifications@github.com"
-  #       - "noreply@github.com"
-
-  # Example: archive all messages with a specific label
-  # - name: "archived label"
-  #   type: archive_by_label
-  #   params:
-  #     label: "to-archive"
-
-# Mode 2: AI Analysis configuration
-# Required for `gml fetch` and `gml notify` commands
-analysis:
-  days: 3         # default time window (past N days)
-  max_days: 14    # hard cap to prevent expensive runs
+  #     senders:
+  #       - noreply@example.com

@@ -286,7 +286,7 @@ func cmdServe(cr *creds.Creds, args []string) {
 	intervalOverride := intFlag(args, "--interval", 0)
 	rulesPath := os.Getenv("GML_RULES")
 	if rulesPath == "" {
-		rulesPath = "rules.yaml"
+		rulesPath = "data/rules.yaml"
 	}
 	scheduler.Run(cfg, cr, intervalOverride, rulesPath)
 }
@@ -1448,7 +1448,7 @@ func cmdMergePlansApply() {
 
 	rulesPath := os.Getenv("GML_RULES")
 	if rulesPath == "" {
-		rulesPath = "rules.yaml"
+		rulesPath = "data/rules.yaml"
 	}
 	data, err := os.ReadFile(rulesPath)
 	if err != nil {
@@ -1565,7 +1565,7 @@ func cmdApplyRules() {
 
 	rulesPath := os.Getenv("GML_RULES")
 	if rulesPath == "" {
-		rulesPath = "rules.yaml"
+		rulesPath = "data/rules.yaml"
 	}
 	data, err := os.ReadFile(rulesPath)
 	if err != nil {
@@ -1593,7 +1593,7 @@ func guardSameSender(rules []propose.AnnotatedRule) []propose.AnnotatedRule {
 func loadConfig() *config.Config {
 	rulesPath := os.Getenv("GML_RULES")
 	if rulesPath == "" {
-		rulesPath = "rules.yaml"
+		rulesPath = "data/rules.yaml"
 	}
 	cfg, err := config.Load(rulesPath)
 	fatal(err)

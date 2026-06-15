@@ -95,8 +95,8 @@ if ! $HAS_GEMINI && ! $HAS_CLAUDE; then
   echo ""
 fi
 
-# GCP project (needed for gemini-cli)
-if $HAS_GEMINI; then
+# GCP project (needed for gemini-cli) — skip if LLP config already exists
+if $HAS_GEMINI && [ ! -f "${REPO}/projects/LLP-llm-proxy/config.yaml" ]; then
   echo ""
   echo "  Gemini CLI needs a Google Cloud project ID."
   echo "  Create one at: https://console.cloud.google.com/projectcreate"
@@ -108,6 +108,8 @@ if $HAS_GEMINI; then
   else
     warn "No GCP project set — you'll need to edit config files manually"
   fi
+elif $HAS_GEMINI; then
+  ok "GCP project already configured in LLP config.yaml"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
