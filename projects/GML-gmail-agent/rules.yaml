@@ -1,0 +1,53 @@
+# GML rules — archive rules applied by `gml run` and the `gml serve` scheduler
+# Each rule is evaluated independently. Use --dry-run to preview before running.
+#
+# Rule types:
+#   archive_by_age:    archive messages older than N days
+#   archive_by_sender: archive messages from matching sender patterns
+#   archive_by_label:  archive messages with a given Gmail label
+#
+# state (archive_by_age): read | unread | any (default: read)
+
+# Access mode: "readonly" (default) or "readwrite"
+# readonly:  stats, profile, and dry-run work; actual archiving is blocked
+# readwrite: enables archiving — also requires re-running setup.sh without --readonly
+mode: readonly
+
+# Scheduler configuration (used by `gml serve`)
+schedule:
+  interval_minutes: 360   # run rules every 6 hours
+
+rules:
+  # Rules will be defined in later project stages.
+  #
+  # - name: "old promotions"
+  #   type: archive_by_age
+  #   params:
+  #     days: 30
+  #     state: read
+  #
+  # - name: "old read mail"
+  #   type: archive_by_age
+  #   params:
+  #     days: 90
+  #     state: read
+
+  # Example: archive all automated notifications from a sender pattern
+  # - name: "github notifications"
+  #   type: archive_by_sender
+  #   params:
+  #     patterns:
+  #       - "notifications@github.com"
+  #       - "noreply@github.com"
+
+  # Example: archive all messages with a specific label
+  # - name: "archived label"
+  #   type: archive_by_label
+  #   params:
+  #     label: "to-archive"
+
+# Mode 2: AI Analysis configuration
+# Required for `gml fetch` and `gml notify` commands
+analysis:
+  days: 3         # default time window (past N days)
+  max_days: 14    # hard cap to prevent expensive runs

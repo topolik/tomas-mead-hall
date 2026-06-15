@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- todo.txt</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ todo.txt ]----------------------------------------------------+</pre>
+
+<form method="POST" action="/todo">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<input type="hidden" name="_return" value="/todo{{.FilterQuery}}">
+<table><tr>
+  <td><input type="text" name="text" placeholder="New item..." size="50" required></td>
+  <td><select name="priority">
+    <option value="Q1">Q1 urgent+important</option>
+    <option value="Q2" selected>Q2 important</option>
+    <option value="Q3">Q3 urgent only</option>
+    <option value="Q4">Q4 neither</option>
+  </select></td>
+  <td><button type="submit">[Add]</button></td>
+</tr></table>
+</form>
+
+<details id="filterDetails"{{if or .FilterQuery .FilterOpen}} open{{end}}>
+<summary style="cursor:pointer;color:#58a6ff;margin:4px 0">[Filters]{{if .FilterQuery}} — active{{end}}</summary>
+<form method="GET" action="/todo" id="filterForm" style="margin:4px 0;line-height:1.8;">
+  <span>Priority:</span>
+  <label><input type="checkbox" name="pri_cb" value="Q1"{{if .FilterPriority.Has "Q1"}} checked{{end}}> 🔴Q1</label>
+  <label><input type="checkbox" name="pri_cb" value="Q2"{{if .FilterPriority.Has "Q2"}} checked{{end}}> 🟡Q2</label>
+  <label><input type="checkbox" name="pri_cb" value="Q3"{{if .FilterPriority.Has "Q3"}} checked{{end}}> 🔵Q3</label>
+  <label><input type="checkbox" name="pri_cb" value="Q4"{{if .FilterPriority.Has "Q4"}} checked{{end}}> ⚪Q4</label>
+  <label style="color:#f85149"><input type="checkbox" name="pri_not" value="1"{{if .FilterPriority.IsNegated}} checked{{end}}> NOT</label>
+  &nbsp;|&nbsp;
+  <span>Status:</span>
+  {{range .Statuses}}<label><input type="checkbox" name="status_cb" value="{{.}}"{{if $.FilterStatus.Has .}} checked{{end}}> <span class="st-{{.}}">{{.}}</span> <span style="color:#8b949e">({{index $.StatusCounts .}})</span></label> {{end}}
+  <label style="color:#f85149"><input type="checkbox" name="status_not" value="1"{{if .FilterStatus.IsNegated}} checked{{end}}> NOT</label>
+  <br>
+  <span title="Comma-separated terms. Prefix with ! to exclude.&#10;Examples: DSH,security | !GML | LLP,!flaky">Text:</span> <input type="text" name="text" value="{{.FilterText.Raw}}" title="Comma-separated terms. Prefix with ! to exclude." placeholder="term1,term2,!exclude..." style="width:250px"{{if not .FilterText.Empty}} autofocus{{end}}>
+  &nbsp;|&nbsp;
+  <span>Sort:</span> <select name="sort">
+    <option value="priority"{{if eq .SortBy "priority"}} selected{{end}}>priority</option>
+    <option value="status"{{if eq .SortBy "status"}} selected{{end}}>status</option>
+    <option value="date"{{if eq .SortBy "date"}} selected{{end}}>added date</option>
+  </select>
+  {{if .FilterQuery}}<a class="btn" href="/todo">[Clear]</a>{{end}}
+  <input type="hidden" name="status" id="h_status" value="">
+  <input type="hidden" name="priority" id="h_priority" value="">
+  <input type="hidden" name="fo" id="h_fo" value="">
+</form>
+</details>
+<script>
+(function() {
+  var form = document.getElementById('filterForm');
+  var debounce = null;
+
+  function submitFilter() {
+    function collect(cbName, notName) {
+      var cbs = document.querySelectorAll('input[name="'+cbName+'"]:checked');
+      var notCb = document.querySelector('input[name="'+notName+'"]');
+      var isNot = notCb && notCb.checked;
+      var vals = [];
+      cbs.forEach(function(cb) { vals.push((isNot ? '!' : '') + cb.value); });
+      return vals.join(',');
+    }
+    document.getElementById('h_status').value = collect('status_cb', 'status_not');
+    document.getElementById('h_priority').value = collect('pri_cb', 'pri_not');
+    var det = document.getElementById('filterDetails');
+    document.getElementById('h_fo').value = det && det.open ? '1' : '';
+    document.querySelectorAll('input[name="status_cb"],input[name="status_not"],input[name="pri_cb"],input[name="pri_not"]').forEach(function(el) { el.disabled = true; });
+    form.submit();
+  }
+
+  form.querySelectorAll('input[type="checkbox"], select').forEach(function(el) {
+    el.addEventListener('change', submitFilter);
+  });
+
+  var txtInput = form.querySelector('input[name="text"]');
+  if (txtInput) {
+    txtInput.addEventListener('input', function() {
+      clearTimeout(debounce);
+      debounce = setTimeout(submitFilter, 400);
+    });
+    txtInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(debounce); submitFilter(); }
+    });
+  }
+
+  form.addEventListener('submit', function(e) { e.preventDefault(); submitFilter(); });
+})();
+</script>
+
+<p style="color:#8b949e">Showing {{.Shown}} of {{.Total}}</p>
+
+{{if not .Items}}<p>&nbsp; No items match.</p>
+{{else}}<form method="POST" action="/todo/bulk" id="bulkForm" style="display:none">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<input type="hidden" name="_return" value="/todo{{.FilterQuery}}">
+</form>
+<div style="margin:4px 0">
+  <button type="submit" form="bulkForm" name="action" value="done" class="bulk-btn" disabled style="opacity:0.5">[Mark Done]</button>
+  <button type="submit" form="bulkForm" name="action" value="parked" class="bulk-btn" disabled style="opacity:0.5">[Park]</button>
+  <button type="submit" form="bulkForm" name="action" value="delete" class="bulk-btn" disabled style="opacity:0.5;color:#f85149" onclick="return confirm('Delete selected items permanently?')">[Delete Selected]</button>
+  <span id="selCount" style="color:#8b949e"></span>
+</div>
+<table>
+<tr><th><input type="checkbox" id="selectAll" title="Select all"></th><th>#</th><th>Text</th><th>Priority</th><th>Status</th><th>Added</th><th>Actions</th></tr>
+{{range .Items}}<tr>
+  <td><input type="checkbox" name="ids" value="{{.ID}}" class="sel-cb" form="bulkForm"></td>
+  <td style="color:#8b949e">{{.ID}}</td>
+  <td>{{.Text}}</td>
+  <td class="pri-{{.Priority}}">{{.Priority}}</td>
+  <td class="st-{{.Status}}">[{{.Status}}]</td>
+  <td>{{.AddedDate}}</td>
+  <td>
+    {{if ne .Status "done"}}<form method="POST" action="/todo/{{.ID}}" style="display:inline">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/todo{{$.FilterQuery}}">
+      <input type="hidden" name="field" value="status"><input type="hidden" name="value" value="done">
+      <button type="submit">[Done]</button></form>{{end}}
+    {{if eq .Status "open"}}<form method="POST" action="/todo/{{.ID}}" style="display:inline">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/todo{{$.FilterQuery}}">
+      <input type="hidden" name="field" value="status"><input type="hidden" name="value" value="in_progress">
+      <button type="submit">[Start]</button></form>{{end}}
+    {{if ne .Status "parked"}}<form method="POST" action="/todo/{{.ID}}" style="display:inline">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/todo{{$.FilterQuery}}">
+      <input type="hidden" name="field" value="status"><input type="hidden" name="value" value="parked">
+      <button type="submit">[Park]</button></form>{{end}}
+    <a href="/todo/{{.ID}}/edit" class="btn">[Edit]</a>
+    <form method="POST" action="/todo/{{.ID}}/delete" style="display:inline" onsubmit="return confirm('Delete this item permanently?')">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/todo{{$.FilterQuery}}">
+      <button type="submit" style="color:#f85149">[Delete]</button></form>
+  </td>
+</tr>{{end}}
+</table>{{end}}
+<script>
+(function() {
+  var selAll = document.getElementById('selectAll');
+  if (!selAll) return;
+  var btns = document.querySelectorAll('.bulk-btn');
+  var cbs = document.querySelectorAll('.sel-cb');
+  var countEl = document.getElementById('selCount');
+
+  function update() {
+    var n = document.querySelectorAll('.sel-cb:checked').length;
+    btns.forEach(function(b) { b.disabled = n === 0; b.style.opacity = n === 0 ? '0.5' : '1'; });
+    countEl.textContent = n > 0 ? n + ' selected' : '';
+    selAll.checked = n === cbs.length && n > 0;
+    selAll.indeterminate = n > 0 && n < cbs.length;
+  }
+
+  selAll.addEventListener('change', function() {
+    cbs.forEach(function(cb) { cb.checked = selAll.checked; });
+    update();
+  });
+  cbs.forEach(function(cb) { cb.addEventListener('change', update); });
+})();
+</script>
+</main>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+</body></html>

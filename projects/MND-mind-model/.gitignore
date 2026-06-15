@@ -1,0 +1,6 @@
+# Raw extracted session content, prompt/response files — never committed (MND-008)
+data/
+# the built binary only — anchored to root so it does NOT match the cmd/mnd/
+# source dir (that over-broad pattern kept cmd/mnd/main.go untracked until 2026-06-13)
+/mnd
+*.err

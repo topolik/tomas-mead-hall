@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- Threads</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ Threads ]-----------------------------------------------------+</pre>
+<div style="margin:4px 0">
+  {{if eq .StatusFilter "open"}}<span class="btn active">[Open ({{.Counts.Open}})]</span>{{else}}<a href="/threads?status=open" class="btn">[Open ({{.Counts.Open}})]</a>{{end}}
+  {{if eq .StatusFilter "resolved"}}<span class="btn active">[Resolved ({{.Counts.Resolved}})]</span>{{else}}<a href="/threads?status=resolved" class="btn">[Resolved ({{.Counts.Resolved}})]</a>{{end}}
+  {{if eq .StatusFilter "all"}}<span class="btn active">[All]</span>{{else}}<a href="/threads?status=all" class="btn">[All]</a>{{end}}
+</div>
+
+<details{{if .NewOpen}} open{{end}}>
+<summary style="cursor:pointer;color:#58a6ff;margin:4px 0">[+ New thread]</summary>
+<form method="POST" action="/threads" style="margin:4px 0">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<table>
+<tr><td>Subject:</td><td><input type="text" name="subject" value="{{.PrefSubject}}" size="60" maxlength="200" required{{if .NewOpen}} autofocus{{end}}></td></tr>
+<tr><td>Ref:</td><td>
+  <select name="ref_type">
+    <option value=""{{if not .PrefRefType}} selected{{end}}>(none)</option>
+    <option value="notification"{{if eq .PrefRefType "notification"}} selected{{end}}>notification</option>
+    <option value="plan"{{if eq .PrefRefType "plan"}} selected{{end}}>plan</option>
+    <option value="project"{{if eq .PrefRefType "project"}} selected{{end}}>project</option>
+  </select>
+  <input type="text" name="ref_id" value="{{.PrefRefID}}" placeholder="id / code" size="12">
+</td></tr>
+<tr><td>Message:</td><td><textarea name="body" rows="4" cols="62" maxlength="10000" required></textarea></td></tr>
+<tr><td></td><td><button type="submit">[Create]</button></td></tr>
+</table>
+</form>
+</details>
+
+{{if not .Threads}}<p>&nbsp; No {{if ne .StatusFilter "all"}}{{.StatusFilter}} {{end}}threads.</p>
+{{else}}<table>
+<tr><th>#</th><th>Subject</th><th>Ref</th><th>Status</th><th>By</th><th>Msgs</th><th>Updated</th></tr>
+{{range .Threads}}<tr>
+  <td style="color:#8b949e">{{.ID}}</td>
+  <td><a href="/threads/{{.ID}}">{{.Subject}}</a></td>
+  <td>{{if .RefType}}<span style="color:#8b949e">{{.RefType}} #{{.RefID}}</span>{{end}}</td>
+  <td class="thread-{{.Status}}">[{{.Status}}]</td>
+  <td>{{.CreatedBy}}</td>
+  <td>{{.MessageCount}}</td>
+  <td><time datetime="{{.UpdatedAt.Format "2006-01-02T15:04:05Z"}}">{{.UpdatedAt.Format "2006-01-02 15:04"}}</time></td>
+</tr>{{end}}
+</table>{{end}}
+</main>
+<script>
+document.querySelectorAll('time[datetime]').forEach(function(el) {
+  var d = new Date(el.getAttribute('datetime'));
+  if (!isNaN(d)) {
+    var pad = function(n) { return n < 10 ? '0' + n : n; };
+    el.textContent = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+});
+</script>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+</body></html>

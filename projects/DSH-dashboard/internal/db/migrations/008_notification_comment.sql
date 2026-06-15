@@ -1,0 +1,1 @@
+ALTER TABLE notifications ADD COLUMN comment TEXT NOT NULL DEFAULT '';

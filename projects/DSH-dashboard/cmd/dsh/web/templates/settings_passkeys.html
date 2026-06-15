@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- Passkeys</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ Passkeys ]----------------------------------------------------+</pre>
+
+{{if .Passkeys}}
+<table>
+<tr><th>Name</th><th>Registered</th><th></th></tr>
+{{range .Passkeys}}<tr>
+  <td>{{.Name}}</td>
+  <td><time datetime="{{.CreatedAt}}">{{.CreatedAt}}</time></td>
+  <td><form method="POST" action="/auth/passkey/remove" style="display:inline">
+    <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+    <input type="hidden" name="cred_id" value="{{.ID}}">
+    <button type="submit">[Remove]</button>
+  </form></td>
+</tr>{{end}}
+</table>
+{{else}}
+<p>[!] All passkeys removed. Register a new one before logging out.</p>
+{{end}}
+
+<hr>
+<p>Add passkey:</p>
+<table>
+<tr><td>Name:</td><td><input type="text" id="pkName" placeholder="e.g. MacBook Touch ID" size="30"></td></tr>
+<tr><td></td><td><button id="registerPasskeyBtn">[Register]</button></td></tr>
+</table>
+<p id="passkeyStatus"></p>
+
+<hr>
+<p>Add a new device (phone / tablet):</p>
+<p>Scan this from the new device, then register a passkey there. Use this when
+the device can't reach DSH on <code>localhost</code> — e.g. over Tailscale, where
+a passkey is bound to the Tailscale hostname, not localhost.</p>
+<button id="enrollDeviceBtn">[Show enrollment QR]</button>
+<div id="enrollBox" style="display:none; margin-top:1em">
+  <img id="enrollQR" alt="enrollment QR code" width="256" height="256" style="background:#fff">
+  <p>Link expires in <span id="enrollExpiry"></span> — scan it before then.</p>
+  <p><a id="enrollLink" href="#" rel="noopener"></a></p>
+</div>
+<p id="enrollStatus" class="error"></p>
+
+<script>
+document.getElementById('enrollDeviceBtn').addEventListener('click', async () => {
+  const status = document.getElementById('enrollStatus');
+  status.textContent = '';
+  try {
+    const res = await fetch('/settings/passkeys/enroll', {
+      method: 'POST', headers: {'X-CSRF-Token': '{{.CSRFToken}}'}
+    });
+    const data = await res.json();
+    if (data.error) { status.textContent = '! ' + data.error; return; }
+    document.getElementById('enrollQR').src = data.qr;
+    const link = document.getElementById('enrollLink');
+    link.href = data.url; link.textContent = data.url;
+    document.getElementById('enrollExpiry').textContent = Math.round(data.expires_in / 60) + ' min';
+    document.getElementById('enrollBox').style.display = 'block';
+  } catch (e) { status.textContent = '! ' + e.message; }
+});
+</script>
+
+<script>
+document.getElementById('registerPasskeyBtn').addEventListener('click', async () => {
+  const status = document.getElementById('passkeyStatus');
+  const name = document.getElementById('pkName').value.trim() || 'Passkey';
+  status.textContent = '';
+  try {
+    const optRes = await fetch('/auth/passkey/register/begin');
+    const options = await optRes.json();
+    if (options.error) { status.textContent = '! ' + options.error; return; }
+    options.publicKey.challenge = b64ToBuffer(options.publicKey.challenge);
+    options.publicKey.user.id = b64ToBuffer(options.publicKey.user.id);
+    if (options.publicKey.excludeCredentials) {
+      options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(c => ({...c, id: b64ToBuffer(c.id)}));
+    }
+    const cred = await navigator.credentials.create(options);
+    const body = {id: cred.id, rawId: bufToB64(cred.rawId), type: cred.type, response: {
+      attestationObject: bufToB64(cred.response.attestationObject),
+      clientDataJSON: bufToB64(cred.response.clientDataJSON),
+    }};
+    const res = await fetch('/auth/passkey/register/finish?name=' + encodeURIComponent(name), {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.status === 'ok') { window.location.reload(); return; }
+    status.textContent = '! ' + (data.error || 'registration failed');
+  } catch (e) { status.textContent = '! ' + e.message; }
+});
+function b64ToBuffer(b64) {
+  return Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0)).buffer;
+}
+function bufToB64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+</script>
+<script>
+document.querySelectorAll('time[datetime]').forEach(function(el) {
+  var d = new Date(el.getAttribute('datetime'));
+  if (!isNaN(d)) {
+    var pad = function(n) { return n < 10 ? '0' + n : n; };
+    el.textContent = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+});
+</script>
+</main>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+</body></html>

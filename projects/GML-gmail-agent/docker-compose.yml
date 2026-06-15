@@ -1,0 +1,17 @@
+name: gml
+
+services:
+  gml:
+    build: .
+    network_mode: host
+    volumes:
+      - ./rules.yaml:/app/rules.yaml:ro
+    environment:
+      GML_RULES: /app/rules.yaml
+      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND: file
+    # Credentials are injected via stdin pipe — never written to disk inside the container.
+    # Usage (via run-task.sh, which handles the op pipe):
+    #   ./run-task.sh profile
+    #   ./run-task.sh stats
+    #   ./run-task.sh run --dry-run
+    #   ./run-task.sh serve

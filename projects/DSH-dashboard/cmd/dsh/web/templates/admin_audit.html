@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- Audit Log</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ Audit Log (last 200) ]----------------------------------------+</pre>
+{{if not .Entries}}<p>&nbsp; No entries yet.</p>
+{{else}}<table>
+<tr><th>Time</th><th>Event</th><th>Actor</th><th>IP</th><th>Detail</th></tr>
+{{range .Entries}}<tr>
+  <td><time datetime="{{.CreatedAt.Format "2006-01-02T15:04:05Z"}}">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</time></td>
+  <td>{{.Event}}</td>
+  <td>{{if .Actor}}{{.Actor}}{{else}}-{{end}}</td>
+  <td>{{if .RemoteIP}}{{.RemoteIP}}{{else}}-{{end}}</td>
+  <td>{{if .Detail}}{{.Detail}}{{else}}-{{end}}</td>
+</tr>{{end}}
+</table>{{end}}
+</main>
+<script>
+document.querySelectorAll('time[datetime]').forEach(function(el) {
+  var d = new Date(el.getAttribute('datetime'));
+  if (!isNaN(d)) {
+    var pad = function(n) { return n < 10 ? '0' + n : n; };
+    el.textContent = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+});
+</script>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+</body></html>

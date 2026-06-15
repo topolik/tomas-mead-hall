@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- Plans</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ Plans ]-------------------------------------------------------+</pre>
+<div style="margin:4px 0">
+  <a href="/plans?status=pending" class="btn{{if eq .StatusFilter "pending"}} active{{end}}">[Pending ({{.Counts.Pending}})]</a>
+  <a href="/plans?status=approved" class="btn{{if eq .StatusFilter "approved"}} active{{end}}">[Approved ({{.Counts.Approved}})]</a>
+  <a href="/plans?status=rejected" class="btn{{if eq .StatusFilter "rejected"}} active{{end}}">[Rejected ({{.Counts.Rejected}})]</a>
+  <a href="/plans?status=conflicts" class="btn{{if eq .StatusFilter "conflicts"}} active{{end}}">[Conflicts ({{.Counts.Conflicts}})]</a>
+  <a href="/plans?status=all" class="btn{{if eq .StatusFilter "all"}} active{{end}}">[All]</a>
+</div>
+{{if .Counts.Approved}}<div style="margin:8px 0;padding:6px 10px;border:1px solid #3fb950;border-radius:4px;color:#3fb950;font-size:0.9em">{{.Counts.Approved}} approved plan{{if gt .Counts.Approved 1}}s{{end}} — run <code>./run.sh apply-rules</code> to sync rules.yaml</div>{{end}}
+{{if eq .StatusFilter "conflicts"}}
+{{if not .ConflictGroups}}<p>&nbsp; No pending conflicts.</p>
+{{else}}
+{{range .ConflictGroups}}
+<div style="border:1px solid #f0883e;border-radius:6px;padding:12px;margin:12px 0;background:#1c1208">
+  <div style="color:#f0883e;font-weight:bold;margin-bottom:8px">{{if .Unresolved}}Unresolved Conflict{{else}}Conflict Resolution{{end}}</div>
+  <div class="plan-card" style="border:1px solid #f0883e;border-radius:4px;padding:8px 12px;margin:4px 0;background:#161b22">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <span style="color:#8b949e">#{{.Resolution.ID}}</span> {{if .Resolution.ProjectCode}}<span style="color:#8b949e">[{{.Resolution.ProjectCode}}]</span> {{end}}<strong>{{.Resolution.Title}}</strong>
+        <span style="color:#8b949e;margin-left:8px"><time datetime="{{.Resolution.CreatedAt.Format "2006-01-02T15:04:05Z"}}">{{.Resolution.CreatedAt.Format "2006-01-02 15:04"}}</time></span>
+      </div>
+      <span style="color:#f0883e;font-weight:bold">{{if .Unresolved}}unresolved{{else}}pending{{end}}</span>
+    </div>
+    <div class="plan-detail" style="margin:6px 0;font-family:monospace;white-space:pre-wrap;font-size:0.85em;color:#c9d1d9">{{.Resolution.Detail}}</div>
+    {{if .Resolution.Comment}}<div style="margin-top:4px;color:#8b949e">Comment: {{.Resolution.Comment}}</div>{{end}}
+    <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
+      {{if not .Unresolved}}
+      <form method="POST" action="/plans/{{.Resolution.ID}}/decide" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+        <input type="hidden" name="_return" value="/plans?status=conflicts">
+        <input type="hidden" name="status" value="approved">
+        <input type="text" name="comment" placeholder="comment (optional)" style="width:250px">
+        <button type="submit" style="color:#3fb950">[Approve Resolution]</button>
+      </form>
+      {{end}}
+      <form method="POST" action="/plans/{{.Resolution.ID}}/decide" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+        <input type="hidden" name="_return" value="/plans?status=conflicts">
+        <input type="hidden" name="status" value="rejected">
+        <input type="text" name="comment" placeholder="reason (optional)" style="width:250px">
+        <button type="submit" style="color:#f85149">[Reject]</button>
+      </form>
+      <a href="/plans/{{.Resolution.ID}}/edit?return=/plans?status=conflicts" class="btn" style="color:#d29922">[Edit]</a>
+      <form method="POST" action="/plans/{{.Resolution.ID}}/delete" style="display:inline" onsubmit="return confirm('Delete conflict plan #{{.Resolution.ID}}?')">
+        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+        <input type="hidden" name="_return" value="/plans?status=conflicts">
+        <button type="submit" style="color:#f85149">[Delete]</button>
+      </form>
+    </div>
+  </div>
+  {{if .Originals}}
+  <div style="margin-top:8px;padding-left:16px;border-left:2px solid #30363d">
+    <div style="color:#8b949e;font-size:0.85em;margin-bottom:4px">Original plans:</div>
+    {{range .Originals}}
+    <div class="plan-card" style="border:1px solid #30363d;border-radius:4px;padding:6px 10px;margin:4px 0;background:#0d1117;opacity:0.85">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span style="color:#8b949e">#{{.ID}}</span> {{if .ProjectCode}}<span style="color:#8b949e">[{{.ProjectCode}}]</span> {{end}}<strong>{{.Title}}</strong>
+        </div>
+        <span class="status-{{.Status}}" style="font-weight:bold">{{.Status}}</span>
+      </div>
+      <div class="plan-detail" style="margin:4px 0;font-family:monospace;white-space:pre-wrap;font-size:0.82em;color:#8b949e">{{.Detail}}</div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+{{else}}
+{{if not .Plans}}<p>&nbsp; No {{.StatusFilter}} plans.</p>
+{{else}}
+{{range .Plans}}
+<div class="plan-card" style="border:1px solid #30363d;border-radius:4px;padding:8px 12px;margin:8px 0;background:#161b22">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <span style="color:#8b949e">#{{.ID}}</span> {{if .ProjectCode}}<span style="color:#8b949e">[{{.ProjectCode}}]</span> {{end}}<strong>{{.Title}}</strong>
+      <span style="color:#8b949e;margin-left:8px"><time datetime="{{.CreatedAt.Format "2006-01-02T15:04:05Z"}}">{{.CreatedAt.Format "2006-01-02 15:04"}}</time></span>
+    </div>
+    <span class="status-{{.Status}}" style="font-weight:bold">{{.Status}}</span>
+  </div>
+  <div class="plan-detail" style="margin:6px 0;font-family:monospace;white-space:pre-wrap;font-size:0.85em;color:#c9d1d9">{{.Detail}}</div>
+  {{if .Comment}}<div style="margin-top:4px;color:#8b949e">Comment: {{.Comment}}</div>{{end}}
+  <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
+    {{if ne .Status "approved"}}
+    <form method="POST" action="/plans/{{.ID}}/decide" style="display:inline">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/plans?status={{$.StatusFilter}}">
+      <input type="hidden" name="status" value="approved">
+      <input type="text" name="comment" placeholder="comment (optional)" style="width:250px">
+      <button type="submit" style="color:#3fb950">[Approve]</button>
+    </form>
+    {{end}}
+    {{if ne .Status "rejected"}}
+    <form method="POST" action="/plans/{{.ID}}/decide" style="display:inline">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/plans?status={{$.StatusFilter}}">
+      <input type="hidden" name="status" value="rejected">
+      <input type="text" name="comment" placeholder="reason (optional)" style="width:250px">
+      <button type="submit" style="color:#f85149">[Reject]</button>
+    </form>
+    {{end}}
+    {{if ne .Status "pending"}}
+    <form method="POST" action="/plans/{{.ID}}/decide" style="display:inline">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/plans?status={{$.StatusFilter}}">
+      <input type="hidden" name="status" value="pending">
+      <button type="submit" style="color:#d29922">[Reset to Pending]</button>
+    </form>
+    {{end}}
+    <a href="/plans/{{.ID}}/edit?return=/plans?status={{$.StatusFilter}}" class="btn" style="color:#d29922">[Edit]</a>
+    <form method="POST" action="/plans/{{.ID}}/delete" style="display:inline" onsubmit="return confirm('Delete plan #{{.ID}}?')">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/plans?status={{$.StatusFilter}}">
+      <button type="submit" style="color:#f85149">[Delete]</button>
+    </form>
+  </div>
+</div>
+{{end}}
+{{end}}
+{{end}}
+</main>
+<script>
+document.querySelectorAll('time[datetime]').forEach(function(el) {
+  var d = new Date(el.getAttribute('datetime'));
+  if (!isNaN(d)) {
+    var pad = function(n) { return n < 10 ? '0' + n : n; };
+    el.textContent = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+});
+document.querySelectorAll('.plan-detail').forEach(function(el) {
+  try {
+    var d = JSON.parse(el.textContent);
+    var html = '';
+    if (d.type === 'merge_conflict_unresolved') {
+      html += '<div style="color:#f0883e">Conflict: ' + esc(d.conflict_description) + '</div>';
+      if (d.source_plan_ids) html += '<div><span style="color:#8b949e">Affected plans:</span> #' + d.source_plan_ids.join(', #') + '</div>';
+      if (html) { el.innerHTML = html; el.style.whiteSpace = 'normal'; }
+      return;
+    }
+    if (d.knowledge_ref && d.knowledge_ref.indexOf('merge_conflict:') === 0) {
+      var ids = d.knowledge_ref.replace('merge_conflict:[', '').replace(']', '').split(' ');
+      html += '<div style="color:#f0883e">Merges plans: ' + ids.map(function(id) { return '#' + esc(id.trim()); }).join(', ') + '</div>';
+    }
+    if (d.pattern) html += '<div><span style="color:#8b949e">Pattern:</span> ' + esc(d.pattern) + '</div>';
+    if (d.proposed_rule) {
+      var r = d.proposed_rule;
+      html += '<div><span style="color:#8b949e">Rule:</span> <code>' + esc(r.name) + '</code> (' + esc(r.type) + ')';
+      if (r.params && r.params.patterns) html += ' — ' + r.params.patterns.map(function(p) { return '<code>' + esc(p) + '</code>'; }).join(', ');
+      html += '</div>';
+      if (r.params && r.params.filter) html += '<div style="color:#3fb950">&#9881; Filter: <code>' + esc(r.params.filter) + '</code></div>';
+      if (r.params && r.params.require_reply) html += '<div style="color:#3fb950">&#9881; Require reply: thread must have responses before archiving</div>';
+    }
+    if (d.constraint && !(d.proposed_rule && d.proposed_rule.params && d.proposed_rule.params.filter)) html += '<div style="color:#d29922">&#9888; Constraint: ' + esc(d.constraint) + ' <span style="color:#f85149;font-size:0.85em">(not enforced by rule type — advisory only)</span></div>';
+    if (d.constraint && d.proposed_rule && d.proposed_rule.params && d.proposed_rule.params.filter) html += '<div style="color:#8b949e">Context: ' + esc(d.constraint) + '</div>';
+    if (d.reason) html += '<div><span style="color:#8b949e">Reason:</span> ' + esc(d.reason) + '</div>';
+    if (html) { el.innerHTML = html; el.style.whiteSpace = 'normal'; }
+  } catch(e) {}
+});
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+</body></html>

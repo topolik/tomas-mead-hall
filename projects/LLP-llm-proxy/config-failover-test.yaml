@@ -1,0 +1,30 @@
+# L2 failover test config: gemini is deliberately broken (simulates a rate-limit
+# / quota error) so the router must fail over to claude. Port 4001 so it can run
+# alongside the real instance. Not for production.
+port: 4001
+db_path: ./data/llp-failover-test.db
+max_prompt_bytes: 1048576
+
+clients:
+  - { key_env: LLP_KEY_GML, agent: gml }
+
+impls:
+  gemini:
+    type: cli
+    command: ["sh", "-c", "echo 'Error: RESOURCE_EXHAUSTED quota exceeded' 1>&2; exit 1"]
+    timeout: 30s
+    cooldown: 60s
+    concurrency: 1
+    price: { in: 0, out: 0 }
+  claude:
+    type: cli
+    command: ["claude", "-p", "--output-format", "text"]
+    timeout: 180s
+    cooldown: 60s
+    concurrency: 1
+    price: { in: 0, out: 0 }
+
+models:
+  auto: { chain: [gemini, claude] }
+
+default_model: auto

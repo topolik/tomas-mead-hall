@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- Notifications</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ Notifications ]-----------------------------------------------+</pre>
+<div style="margin:4px 0">
+  {{if .ShowDismissed}}<a href="/notifications" class="btn">[Active]</a> <span class="btn active">[Dismissed]</span>
+  {{else}}<span class="btn active">[Active]</span> <a href="/notifications?show=dismissed" class="btn">[Dismissed]</a>
+  {{end}}
+  <button id="pushBtn" onclick="togglePush()" style="display:none">[Enable Push]</button>
+  <span id="pushStatus" style="color:#8b949e"></span>
+</div>
+<details id="filterDetails"{{if or .FilterQuery .FilterOpen}} open{{end}}>
+<summary style="cursor:pointer;color:#58a6ff;margin:4px 0">[Filters]{{if .FilterQuery}} — active{{end}}</summary>
+<form method="GET" action="/notifications" id="filterForm" style="margin:4px 0;line-height:1.8;">
+  <span>Type:</span>
+  <label><input type="checkbox" name="type_cb" value="action_needed"{{if .FilterType.Has "action_needed"}} checked{{end}}> action_needed</label>
+  <label><input type="checkbox" name="type_cb" value="info"{{if .FilterType.Has "info"}} checked{{end}}> info</label>
+  <label style="color:#f85149"><input type="checkbox" name="type_not" value="1"{{if .FilterType.IsNegated}} checked{{end}}> NOT</label>
+  &nbsp;|&nbsp;
+  <span>Priority:</span>
+  <label><input type="checkbox" name="pri_cb" value="Q1"{{if .FilterPriority.Has "Q1"}} checked{{end}}> 🔴Q1</label>
+  <label><input type="checkbox" name="pri_cb" value="Q2"{{if .FilterPriority.Has "Q2"}} checked{{end}}> 🟡Q2</label>
+  <label><input type="checkbox" name="pri_cb" value="Q3"{{if .FilterPriority.Has "Q3"}} checked{{end}}> 🔵Q3</label>
+  <label><input type="checkbox" name="pri_cb" value="Q4"{{if .FilterPriority.Has "Q4"}} checked{{end}}> ⚪Q4</label>
+  <label style="color:#f85149"><input type="checkbox" name="pri_not" value="1"{{if .FilterPriority.IsNegated}} checked{{end}}> NOT</label>
+  <br>
+  <span>Project:</span>
+  {{range .Projects}}<label><input type="checkbox" name="proj_cb" value="{{.}}"{{if $.FilterProject.Has .}} checked{{end}}> {{.}}</label> {{end}}
+  {{if .Projects}}<label style="color:#f85149"><input type="checkbox" name="proj_not" value="1"{{if .FilterProject.IsNegated}} checked{{end}}> NOT</label>{{end}}
+  &nbsp;|&nbsp;
+  <span title="Comma-separated terms. Prefix with ! to exclude.&#10;Examples: security,SOCRadar | !newsletter | security,!patch">Message:</span> <input type="text" name="message" value="{{.FilterMessage.Raw}}" title="Comma-separated terms. Prefix with ! to exclude.&#10;Examples: security,SOCRadar | !newsletter | security,!patch" placeholder="term1,term2,!exclude..." style="width:250px"{{if not .FilterMessage.Empty}} autofocus{{end}}>
+  &nbsp;|&nbsp;
+  <span>Sort:</span> <select name="sort">
+    <option value="date"{{if eq .SortBy "date"}} selected{{end}}>date</option>
+    <option value="priority"{{if eq .SortBy "priority"}} selected{{end}}>priority</option>
+  </select>
+  {{if .FilterQuery}}<a class="btn" href="/notifications">[Clear]</a>{{end}}
+  <input type="hidden" name="type" id="h_type" value="">
+  <input type="hidden" name="project" id="h_project" value="">
+  <input type="hidden" name="priority" id="h_priority" value="">
+  <input type="hidden" name="fo" id="h_fo" value="">
+</form>
+</details>
+<script>
+(function() {
+  var form = document.getElementById('filterForm');
+  var debounce = null;
+
+  function submitFilter() {
+    function collect(cbName, notName) {
+      var cbs = document.querySelectorAll('input[name="'+cbName+'"]:checked');
+      var notCb = document.querySelector('input[name="'+notName+'"]');
+      var isNot = notCb && notCb.checked;
+      var vals = [];
+      cbs.forEach(function(cb) { vals.push((isNot ? '!' : '') + cb.value); });
+      return vals.join(',');
+    }
+    document.getElementById('h_type').value = collect('type_cb', 'type_not');
+    document.getElementById('h_project').value = collect('proj_cb', 'proj_not');
+    document.getElementById('h_priority').value = collect('pri_cb', 'pri_not');
+    var det = document.getElementById('filterDetails');
+    document.getElementById('h_fo').value = det && det.open ? '1' : '';
+    document.querySelectorAll('input[name="type_cb"],input[name="type_not"],input[name="pri_cb"],input[name="pri_not"],input[name="proj_cb"],input[name="proj_not"]').forEach(function(el) { el.disabled = true; });
+    form.submit();
+  }
+
+  form.querySelectorAll('input[type="checkbox"], select').forEach(function(el) {
+    el.addEventListener('change', submitFilter);
+  });
+
+  var msgInput = form.querySelector('input[name="message"]');
+  if (msgInput) {
+    msgInput.addEventListener('input', function() {
+      clearTimeout(debounce);
+      debounce = setTimeout(submitFilter, 400);
+    });
+    msgInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(debounce); submitFilter(); }
+    });
+  }
+
+  form.addEventListener('submit', function(e) { e.preventDefault(); submitFilter(); });
+})();
+
+function editComment(span) {
+  var cell = span.parentElement;
+  span.style.display = 'none';
+  var form = cell.querySelector('.comment-form');
+  form.style.display = '';
+  var ta = form.querySelector('textarea');
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+function cancelComment(btn) {
+  var form = btn.closest('.comment-form');
+  form.style.display = 'none';
+  form.parentElement.querySelector('.comment-text').style.display = '';
+}
+</script>
+{{if not .Notifications}}<p>&nbsp; No {{if .ShowDismissed}}dismissed{{else}}pending{{end}} notifications.</p>
+{{else}}{{if not .ShowDismissed}}<form method="POST" action="/notifications/bulk-dismiss" id="bulkForm" style="display:none">
+<input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+<input type="hidden" name="_return" value="/notifications{{$.FilterQuery}}">
+</form>
+<div style="margin:4px 0"><button type="submit" form="bulkForm" id="bulkDismissBtn" disabled style="opacity:0.5">[Dismiss Selected]</button> <span id="selCount" style="color:#8b949e"></span></div>
+{{end}}<table>
+<tr>{{if not .ShowDismissed}}<th><input type="checkbox" id="selectAll" title="Select all"></th>{{end}}<th>#</th><th>Type</th><th>Project</th><th>Message</th><th>When</th><th>Comment</th><th></th></tr>
+{{range .Notifications}}<tr>
+  {{if not $.ShowDismissed}}<td><input type="checkbox" name="ids" value="{{.ID}}" class="sel-cb" form="bulkForm"></td>{{end}}
+  <td style="color:#8b949e">{{.ID}}</td>
+  <td>[{{.Type}}]</td>
+  <td>{{if .ProjectCode}}[{{.ProjectCode}}]{{end}}</td>
+  <td>
+    <div class="notif-msg">{{.Message}}</div>
+    <span class="notif-more" style="display:none">[more]</span>
+    {{if .Link}}<a class="btn" href="{{.Link}}" target="_blank" rel="noopener">[open]</a>{{end}}
+    {{$th := index $.ThreadRefs (printf "%d" .ID)}}{{if $th.ID}}<a class="btn" href="/threads/{{$th.ID}}" title="thread ({{$th.Status}})">[&#128172;{{if eq $th.Status "resolved"}}&#10003;{{end}}]</a>{{else}}<a class="btn" href="/threads?new=1&ref_type=notification&ref_id={{.ID}}&subject=re%3A%20notification%20%23{{.ID}}">[discuss]</a>{{end}}</td>
+  <td><time datetime="{{.CreatedAt.Format "2006-01-02T15:04:05Z"}}">{{.CreatedAt.Format "2006-01-02 15:04"}}</time></td>
+  <td class="comment-cell">
+    <span class="comment-text" onclick="editComment(this)" style="cursor:pointer;{{if not .Comment}}color:#58a6ff{{end}}">{{if .Comment}}{{.Comment}}{{else}}[+ comment]{{end}}</span>
+    <form method="POST" action="/notifications/{{.ID}}/comment" class="comment-form" style="display:none">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_return" value="/notifications{{$.FilterQuery}}">
+      <textarea name="comment" rows="2" cols="30" maxlength="2000">{{.Comment}}</textarea>
+      <button type="submit">[Save]</button> <button type="button" onclick="cancelComment(this)">[Cancel]</button>
+    </form></td>
+  <td>{{if $.ShowDismissed}}<form method="POST" action="/notifications/{{.ID}}/restore" style="display:inline">
+    <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+    <input type="hidden" name="_return" value="/notifications?show=dismissed">
+    <button type="submit">[Restore]</button></form>
+    <form method="POST" action="/notifications/{{.ID}}/delete" style="display:inline" onsubmit="return confirm('Delete notification #{{.ID}}?')">
+    <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+    <input type="hidden" name="_return" value="/notifications?show=dismissed">
+    <button type="submit" style="color:#f85149">[Delete]</button></form>
+  {{else}}<form method="POST" action="/notifications/{{.ID}}/dismiss" style="display:inline">
+    <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+    <input type="hidden" name="_return" value="/notifications{{$.FilterQuery}}">
+    <button type="submit">[Dismiss]</button></form>
+  {{end}}</td>
+</tr>{{end}}
+</table>{{end}}
+<script>
+(function() {
+  var selAll = document.getElementById('selectAll');
+  var btn = document.getElementById('bulkDismissBtn');
+  if (!selAll || !btn) return;
+  var cbs = document.querySelectorAll('.sel-cb');
+  var countEl = document.getElementById('selCount');
+
+  function updateBtn() {
+    var n = document.querySelectorAll('.sel-cb:checked').length;
+    btn.disabled = n === 0;
+    btn.style.opacity = n === 0 ? '0.5' : '1';
+    countEl.textContent = n > 0 ? n + ' selected' : '';
+    selAll.checked = n === cbs.length && n > 0;
+    selAll.indeterminate = n > 0 && n < cbs.length;
+  }
+
+  selAll.addEventListener('change', function() {
+    cbs.forEach(function(cb) { cb.checked = selAll.checked; });
+    updateBtn();
+  });
+  cbs.forEach(function(cb) { cb.addEventListener('change', updateBtn); });
+})();
+</script>
+</main>
+<script>
+document.querySelectorAll('time[datetime]').forEach(function(el) {
+  var d = new Date(el.getAttribute('datetime'));
+  if (!isNaN(d)) {
+    var pad = function(n) { return n < 10 ? '0' + n : n; };
+    el.textContent = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+});
+
+// Long-message expand: a .notif-msg is CSS-clamped to a few lines. If its
+// content overflows the clamp, reveal the [more] toggle next to it.
+document.querySelectorAll('.notif-msg').forEach(function(msg) {
+  var more = msg.nextElementSibling;
+  if (!more || !more.classList.contains('notif-more')) return;
+  if (msg.scrollHeight - msg.clientHeight > 2) {
+    more.style.display = '';
+    more.addEventListener('click', function() {
+      var expanded = msg.classList.toggle('expanded');
+      more.textContent = expanded ? '[less]' : '[more]';
+    });
+  }
+});
+</script>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+<script>
+var pushReg = null, pushSub = null;
+var csrf = '{{.CSRFToken}}';
+
+if ('serviceWorker' in navigator && 'PushManager' in window) {
+  navigator.serviceWorker.register('/sw.js').then(function(reg) {
+    pushReg = reg;
+    return reg.pushManager.getSubscription();
+  }).then(function(sub) {
+    pushSub = sub;
+    updatePushUI();
+  }).catch(function(e) {
+    document.getElementById('pushStatus').textContent = 'Push not available: ' + e.message;
+  });
+} else {
+  document.getElementById('pushStatus').textContent = 'Push not supported in this browser';
+}
+
+function updatePushUI() {
+  var btn = document.getElementById('pushBtn');
+  var status = document.getElementById('pushStatus');
+  if (Notification.permission === 'denied') {
+    status.textContent = 'Push blocked — enable in browser settings';
+    return;
+  }
+  btn.style.display = '';
+  if (pushSub) {
+    btn.textContent = '[Disable Push]';
+    status.textContent = 'Push enabled';
+    status.style.color = '#3fb950';
+  } else {
+    btn.textContent = '[Enable Push]';
+    status.textContent = '';
+  }
+}
+
+function togglePush() {
+  if (pushSub) { disablePush(); } else { enablePush(); }
+}
+
+function enablePush() {
+  fetch('/push/vapid-key').then(function(r) { return r.json(); })
+  .then(function(data) {
+    var key = urlBase64ToUint8Array(data.key);
+    return pushReg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: key});
+  })
+  .then(function(sub) {
+    var j = sub.toJSON();
+    return fetch('/push/subscribe', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf},
+      body: JSON.stringify({endpoint: j.endpoint, keys: j.keys})
+    });
+  })
+  .then(function() {
+    return pushReg.pushManager.getSubscription();
+  })
+  .then(function(sub) {
+    pushSub = sub;
+    updatePushUI();
+  })
+  .catch(function(e) {
+    document.getElementById('pushStatus').textContent = 'Error: ' + e.message;
+  });
+}
+
+function disablePush() {
+  var endpoint = pushSub.endpoint;
+  pushSub.unsubscribe().then(function() {
+    return fetch('/push/unsubscribe', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf},
+      body: JSON.stringify({endpoint: endpoint})
+    });
+  }).then(function() {
+    pushSub = null;
+    updatePushUI();
+  });
+}
+
+function urlBase64ToUint8Array(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var raw = atob(base64);
+  var arr = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+</script>
+</body></html>

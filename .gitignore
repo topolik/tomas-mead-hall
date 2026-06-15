@@ -1,0 +1,39 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
+
+# IDE, editor, and LLM workspace configs
+.claude/
+.gemini/
+.vscode/
+.idea/
+*.swp
+
+# Runtime configs (may contain secrets)
+projects/*/config.yaml
+
+# Go binaries (built by run.sh / setup.sh)
+projects/DSH-dashboard/dsh
+projects/LLP-llm-proxy/llp
+
+# Runtime data and state (each project keeps ephemeral/sensitive files in data/)
+projects/*/data/
+projects/*/node_modules/
+.llp/
+
+# Certificates and keys
+*.key
+*.pem
+*.crt
+*.srl
+
+# Logs
+*.log

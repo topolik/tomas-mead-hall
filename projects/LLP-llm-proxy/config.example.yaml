@@ -1,0 +1,108 @@
+# LLP — LLM Proxy configuration.
+# Secrets (client bearer keys, remote API keys) are read from the environment,
+# never from this file. Copy to config.yaml and adjust.
+#
+# Capability ladder (Tomas, 2026-06-14): two gemini tiers + two claude tiers,
+# most-capable first. `auto` walks them; a quota-exhausted tier cools down and
+# later requests skip past it. Model ids verified live against the host CLIs.
+
+port: 4000
+bind_host: "127.0.0.1"      # loopback by default — the data API is not reachable off-host
+db_path: ./data/llp.db
+max_prompt_bytes: 1048576   # 1 MiB
+
+# Recent-requests detail: store a truncated copy of each request's prompt and
+# response so the DSH tab can show them (expandable). Set content_preview: false
+# to record only metadata (no prompt/response text on disk).
+# content_preview: true
+# content_preview_max: 4096   # chars kept per prompt and per response
+
+# Token handshake (LLP-010): agents register over this Unix socket at their
+# startup and receive a per-session token, held only in memory — no keys in env,
+# on disk, or in /proc. The socket lives in a 0700 owner-only dir (the gate).
+# control_socket: "~/.llp/control.sock"
+# control_require_same_uid: false
+
+impls:
+  # --- Tier 1: highest models on each side --------------------------------
+  # Gemini via the host CLI (reuses the host's Cloud-project auth — free).
+  #
+  # SECURITY — `--approval-mode default` is REQUIRED (LLP-014): without it,
+  # headless gemini-cli inherits the user-level defaultApprovalMode (auto_edit
+  # on this host) and CAN write files with its built-in tools — `-e none` does
+  # NOT disable them (incident MND-011, 2026-06-12). `default` auto-denies every
+  # tool call in -p mode. Do NOT use `--approval-mode plan` (errors unless
+  # experimental.plan is enabled, LLP-008). The committed .gemini/settings.json
+  # layers defense-in-depth: defaultApprovalMode=default + general.maxAttempts=1
+  # (fail fast on quota; failover/cooldown are LLP's job, LLP-015).
+  gemini:
+    type: cli
+    command: ["npx", "@google/gemini-cli", "-e", "none", "--approval-mode", "default", "-p", ""]
+    env:
+      GOOGLE_CLOUD_PROJECT: "your-gcp-project-id"
+    model_id: "gemini-3.1-pro-preview"   # "Gemini 3.1 Pro" (plain gemini-3.1-pro is ModelNotFound)
+    model_flag: "-m"                      # per-request override, e.g. model:"gemini/gemini-2.5-pro"
+    timeout: 300s
+    cooldown: 60s          # momentary throttle (rate limit)
+    quota_cooldown: 30m    # quota exhausted for a long window (TerminalQuotaError "resets after Nh")
+    concurrency: 1
+    price: { in: 0, out: 0 }
+
+  # Claude via the host CLI (reuses the host subscription — free). The [1m]
+  # suffix selects the 1M-context variant (verified accepted by `claude --model`).
+  claude:
+    type: cli
+    command: ["claude", "-p", "--output-format", "text"]
+    model_id: "claude-opus-4-8[1m]"      # Opus 4.8, 1M context
+    model_flag: "--model"
+    timeout: 300s
+    cooldown: 60s
+    quota_cooldown: 30m    # "usage limit reached" = out for the rest of the usage window
+    concurrency: 1
+    price: { in: 0, out: 0 }
+
+  # --- Tier 2: previous-generation flagships ------------------------------
+  gemini2:
+    type: cli
+    # same security flags as the gemini tier (LLP-014) — do not drop --approval-mode default
+    command: ["npx", "@google/gemini-cli", "-e", "none", "--approval-mode", "default", "-p", ""]
+    env:
+      GOOGLE_CLOUD_PROJECT: "your-gcp-project-id"
+    model_id: "gemini-2.5-pro"
+    model_flag: "-m"
+    timeout: 300s
+    cooldown: 60s
+    quota_cooldown: 30m
+    concurrency: 1
+    price: { in: 0, out: 0 }
+
+  claude2:
+    type: cli
+    command: ["claude", "-p", "--output-format", "text"]
+    model_id: "claude-opus-4-7[1m]"      # Opus 4.7, 1M context
+    model_flag: "--model"
+    timeout: 300s
+    cooldown: 60s
+    quota_cooldown: 30m
+    concurrency: 1
+    price: { in: 0, out: 0 }
+
+  # OpenLLM / any OpenAI-compatible HTTP endpoint. STUBBED (empty base_url
+  # disables it). Point base_url at Ollama / a remote API / OpenRouter to enable.
+  openllm:
+    type: http
+    base_url: ""
+    api_key_env: OPENLLM_API_KEY
+    model_id: ""
+    timeout: 180s
+    cooldown: 60s
+    concurrency: 1
+    price: { in: 0, out: 0 }
+
+# Logical model name -> ordered failover chain ("most capable with quota wins").
+# auto alternates sides so a one-side outage still has the other side near the top.
+models:
+  auto:        { chain: [gemini, claude, gemini2, claude2, openllm] }
+  gml-analyze: { chain: [gemini2, claude2] }   # bulk analyze on the cheaper pair (2.5-pro / opus-4-7)
+
+default_model: auto

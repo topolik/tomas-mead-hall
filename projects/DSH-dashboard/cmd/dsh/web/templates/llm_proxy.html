@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- LLP Proxy</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ LLM Proxy ]---------------------------------------------------+</pre>
+
+{{if not .Configured}}
+<p>&nbsp; LLM proxy not configured. Set <code>DSH_LLP_URL</code> (e.g. <code>http://localhost:4000</code>) and <code>DSH_LLP_SOCKET</code> (the bind-mounted control socket, default <code>/llp/control.sock</code>).</p>
+{{else}}
+<p>&nbsp; Proxy: <code>{{.BaseURL}}</code></p>
+
+<pre>--[ Backends ]--</pre>
+{{if .HealthErr}}<p class="status-rejected">&nbsp; unavailable: {{.HealthErr}}</p>
+{{else if .Health}}<table>
+<tr><th>Backend</th><th>State</th></tr>
+{{range .Health.Impls}}<tr><td>{{.Name}}</td><td class="{{if .CoolingDown}}status-pending{{else if .Available}}status-approved{{else}}status-rejected{{end}}">{{.State}}</td></tr>{{end}}
+</table>{{end}}
+
+<pre>--[ Usage &amp; cost ]--</pre>
+{{if .UsageErr}}<p class="status-rejected">&nbsp; unavailable: {{.UsageErr}}</p>
+{{else if .Usage}}<table>
+<tr><th>Day</th><th>Agent</th><th>Impl</th><th>Reqs</th><th>Prompt tok</th><th>Compl tok</th><th>Cost $</th><th>Err</th></tr>
+{{range .Usage}}<tr><td>{{.Day}}</td><td>{{.Agent}}</td><td>{{.Impl}}</td><td>{{.Requests}}</td><td>{{.PromptTokens}}</td><td>{{.CompletionTokens}}</td><td>{{printf "%.4f" .CostUSD}}</td><td>{{if .Errors}}<span class="status-rejected">{{.Errors}}</span>{{else}}0{{end}}</td></tr>{{end}}
+</table>
+{{else}}<p>&nbsp; No usage yet.</p>{{end}}
+
+<pre>--[ Recent requests ]--  <small>(click a row to expand request + response)</small></pre>
+{{if .RecentErr}}<p class="status-rejected">&nbsp; unavailable: {{.RecentErr}}</p>
+{{else if .Recent}}
+{{range .Recent}}<details class="llp-req">
+<summary><span class="{{if eq .Status "ok"}}status-approved{{else}}status-rejected{{end}}">{{if eq .Status "ok"}}✓{{else}}✗{{end}}</span>
+ {{.Ts}} · {{.Agent}} · <b>{{.RequestedModel}}→{{.ImplUsed}}</b> · {{.PromptTokens}}/{{.CompletionTokens}} tok · ${{printf "%.4f" .CostUSD}} · {{.LatencyMS}}ms{{if .Error}} · <span class="status-rejected">{{.Error}}</span>{{end}}</summary>
+<div class="llp-req-body">
+<div class="llp-req-label">request:</div><pre class="llp-response">{{if .PromptPreview}}{{.PromptPreview}}{{else}}(content preview disabled){{end}}</pre>
+<div class="llp-req-label">response:</div><pre class="llp-response">{{if .ResponsePreview}}{{.ResponsePreview}}{{else if .Error}}{{.Error}}{{else}}(none){{end}}</pre>
+</div>
+</details>
+{{end}}
+{{else}}<p>&nbsp; No requests yet.</p>{{end}}
+
+<pre>--[ Playground ]--  <small>(multi-turn — keeps the conversation; switch model per turn; Clear to reset)</small></pre>
+<div id="pg">{{template "llm_proxy_playground" .}}</div>
+
+{{end}}
+</main>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+</body></html>

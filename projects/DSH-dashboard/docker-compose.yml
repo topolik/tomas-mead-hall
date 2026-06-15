@@ -1,0 +1,56 @@
+name: dsh
+
+services:
+  dsh:
+    build: .
+    network_mode: host
+    volumes:
+      - dsh-data:/data
+      - ../../project-management:/pm:ro
+      - ../../todo.txt:/todo.txt:rw
+      # LLP control socket: DSH registers here at startup to get a session token
+      # (no keys, nothing in env/proc). Start LLP first so ~/.llp exists. The
+      # container runs as root, so it can reach the 0700-dir/0600-socket.
+      - ${HOME}/.llp:/llp
+    environment:
+      DSH_PORT: "9090"
+      DSH_DB_PATH: "/data/dsh.db"
+      DSH_ORIGIN: "${DSH_ORIGIN:-http://localhost:9090}"
+      DSH_PM_PATH: "/pm"
+      DSH_TODO_PATH: "/todo.txt"
+      # LLM proxy (LLP) tab: host-network so localhost reaches LLP's loopback data API.
+      # Auth is via the control-socket handshake above — no key here, none in /proc.
+      DSH_LLP_URL: "http://localhost:4000"
+      DSH_LLP_SOCKET: "/llp/control.sock"
+      # DSH_TLS_CERT / DSH_TLS_KEY: not needed — Tailscale handles TLS
+      # DSH_TOTP_KEY: 32-byte hex key for encrypting TOTP seeds (auto-generated if absent)
+    restart: unless-stopped
+    # `docker compose watch` (or `make watch`) rebuilds + recreates this service
+    # whenever a source file changes — no more stale images from forgetting
+    # --build. Docs/markdown are ignored so editing a README doesn't rebuild.
+    develop:
+      watch:
+        - action: rebuild
+          path: .
+          ignore:
+            - "*.md"
+            - "**/*.md"
+            - ".git/"
+
+  tailscale:
+    image: tailscale/tailscale:latest
+    hostname: dsh
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["tailscaled --state=/var/lib/tailscale/tailscaled.state & sleep infinity"]
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    restart: unless-stopped
+
+volumes:
+  dsh-data:
+  tailscale-state:

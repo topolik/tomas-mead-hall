@@ -1,0 +1,1 @@
+ALTER TABLE passkey_credentials ADD COLUMN flags INTEGER NOT NULL DEFAULT 0;

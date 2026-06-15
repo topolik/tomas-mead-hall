@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- API Clients</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ API Clients (OAuth2.1) ]--------------------------------------+</pre>
+
+{{if .NewSecret}}
+<p class="notice">[NEW CLIENT] client_id: <code>{{.NewClient}}</code></p>
+<p class="notice">client_secret: <code>{{.NewSecret}}</code></p>
+<p class="notice">! Save the secret now -- it will not be shown again.</p>
+<hr>
+{{end}}
+
+<form method="POST" action="/admin/clients">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<table><tr>
+  <td>Name:</td>
+  <td><input type="text" name="name" placeholder="e.g. supply-chain-audit" required></td>
+  <td><button type="submit">[Create Client]</button></td>
+</tr></table>
+</form>
+<hr>
+{{if not .Clients}}<p>&nbsp; No clients yet.</p>
+{{else}}<table>
+<tr><th>client_id</th><th>Name</th><th>Created</th><th>Last Used</th><th>Last IP</th><th>Status</th><th></th></tr>
+{{range .Clients}}<tr>
+  <td><code>{{.ClientID}}</code></td>
+  <td>{{.Name}}</td>
+  <td><time datetime="{{.CreatedAt}}">{{.CreatedAt}}</time></td>
+  <td>{{if .LastUsedAt}}<time datetime="{{.LastUsedAt}}">{{.LastUsedAt}}</time>{{else}}-{{end}}</td>
+  <td>{{if .LastUsedIP}}{{.LastUsedIP}}{{else}}-{{end}}</td>
+  <td>{{if .Revoked}}[REVOKED]{{else}}[ACTIVE]{{end}}</td>
+  <td>{{if not .Revoked}}<form method="POST" action="/admin/clients/{{.ClientID}}/revoke">
+    <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+    <button type="submit">[Revoke]</button></form>{{end}}</td>
+</tr>{{end}}
+</table>{{end}}
+</main>
+<script>
+document.querySelectorAll('time[datetime]').forEach(function(el) {
+  var d = new Date(el.getAttribute('datetime'));
+  if (!isNaN(d)) {
+    var pad = function(n) { return n < 10 ? '0' + n : n; };
+    el.textContent = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+});
+</script>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+</body></html>

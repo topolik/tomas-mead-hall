@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DSH -- Edit item</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header><pre>+--[ DSH Dashboard ]-----------------------------------------------+
+| <nav><a href="/todo">[todo.txt]</a> <a href="/projects">[Projects]</a> <a href="/notifications">[Notifications{{if .NotifBadge}} <span class="badge">{{.NotifBadge}}</span>{{end}}]</a> <a href="/plans">[Plans{{if .PlanBadge}} <span class="badge">{{.PlanBadge}}</span>{{end}}]</a> <a href="/threads">[Threads{{if .ThreadBadge}} <span class="badge">{{.ThreadBadge}}</span>{{end}}]</a> <a href="/llm-proxy">[LLP]</a> <a href="/admin/clients">[API Clients]</a> <a href="/admin/audit">[Audit Log]</a> <a href="/settings/passkeys">[Passkeys]</a> <a href="/logout">[Logout {{.Username}}]</a></nav>
++------------------------------------------------------------------+</pre></header>
+<main>
+<pre>+--[ Edit item ]---------------------------------------------------+</pre>
+<form method="POST" action="/todo/{{.Item.ID}}/edit">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<input type="hidden" name="added_date" value="{{.Item.AddedDate}}">
+<table>
+<tr><td>Text:</td><td><input type="text" name="text" value="{{.Item.Text}}" size="60" required autofocus></td></tr>
+<tr><td>Priority:</td><td><select name="priority">
+  <option value="Q1"{{if eq .Item.Priority "Q1"}} selected{{end}}>Q1 urgent+important</option>
+  <option value="Q2"{{if eq .Item.Priority "Q2"}} selected{{end}}>Q2 important</option>
+  <option value="Q3"{{if eq .Item.Priority "Q3"}} selected{{end}}>Q3 urgent only</option>
+  <option value="Q4"{{if eq .Item.Priority "Q4"}} selected{{end}}>Q4 neither</option>
+</select></td></tr>
+<tr><td></td><td><button type="submit">[Save]</button> <a href="/todo" class="btn">[Cancel]</a></td></tr>
+</table>
+</form>
+</main>
+<footer><pre>+------------------------------------------------------------------+</pre></footer>
+</body></html>

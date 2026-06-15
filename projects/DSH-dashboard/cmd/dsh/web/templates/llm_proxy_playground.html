@@ -1,0 +1,18 @@
+{{define "llm_proxy_playground"}}
+{{if .PgMessages}}<div class="llp-chat">
+{{range .PgMessages}}<div class="llp-turn llp-{{.Role}}"><span class="llp-role">{{.Role}}</span><div class="llp-turn-content">{{.Content}}</div></div>{{end}}
+</div>{{end}}
+{{if .PgError}}<p class="status-rejected">&nbsp; error: {{.PgError}}</p>{{end}}
+{{if .PgServedBy}}<p class="llp-req-label">&nbsp; ↳ served by <b>{{.PgServedBy}}</b>{{if .PgLatency}} in {{.PgLatency}}{{end}}</p>{{end}}
+<form hx-post="/llm-proxy/run" hx-target="#pg" hx-swap="innerHTML" hx-indicator="#pg-spinner" hx-disabled-elt="find button">
+<input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+<input type="hidden" name="history" value="{{.PgHistoryB64}}">
+<p>&nbsp; Model: <input type="text" name="model" list="llp-models" value="{{if .PgModel}}{{.PgModel}}{{else}}auto{{end}}" size="30">
+<datalist id="llp-models">{{range .Suggestions}}<option value="{{.}}">{{end}}</datalist>
+(e.g. <code>auto</code>, <code>claude</code>, <code>gemini/gemini-2.5-flash</code>)</p>
+<p>&nbsp; <textarea name="prompt" rows="4" cols="80" placeholder="{{if .PgMessages}}Continue the conversation…{{else}}Type a prompt to send through the proxy…{{end}}">{{if .PgPrompt}}{{.PgPrompt}}{{end}}</textarea></p>
+<p>&nbsp; <button type="submit">Send</button>
+   {{if .PgMessages}}<button type="submit" name="clear" value="1" formnovalidate>Clear</button>{{end}}
+   <span id="pg-spinner" class="htmx-indicator">&nbsp; ⏳ sending… (CLI backends take 10–30s)</span></p>
+</form>
+{{end}}

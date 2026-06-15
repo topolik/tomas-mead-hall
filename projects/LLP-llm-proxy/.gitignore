@@ -1,0 +1,11 @@
+/data/
+*.db
+*.db-wal
+*.db-shm
+.env
+*.env
+/llp
+# Live config is generated from config.example.yaml by run.sh (may hold
+# environment-specific values like GOOGLE_CLOUD_PROJECT). The committed
+# config-failover-test.yaml is a test fixture and is intentionally tracked.
+config.yaml

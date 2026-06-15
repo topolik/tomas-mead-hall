@@ -1,0 +1,1 @@
+ALTER TABLE notifications ADD COLUMN priority TEXT DEFAULT NULL;
