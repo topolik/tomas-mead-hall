@@ -222,10 +222,30 @@ case "$cmd" in
       esac
       i=$((i+1))
     done
+    # Embedding retrieval: if embeddings exist and Ollama is up, embed the question
+    # and pass vectors to ask-prompt for semantic retrieval. Falls back to BM25.
+    embed_flags=""
+    if [[ -s "${SCRIPT_DIR}/data/embeddings.json" ]] && [[ "${MND_EMBED:-auto}" != "off" ]]; then
+      embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+      embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+      if curl -s --max-time 2 "$embed_url/api/tags" >/dev/null 2>&1; then
+        q_for_embed="${question:-}"
+        if [[ -n "$tail_file" ]]; then
+          q_for_embed="$(cat "$tail_file")"
+        fi
+        if [[ -n "$q_for_embed" ]]; then
+          resp="$(curl -s "$embed_url/api/embed" -d "$(jq -n --arg m "$embed_model" --arg t "$q_for_embed" '{model:$m, input:[$t]}')" 2>/dev/null || true)"
+          if echo "$resp" | jq -e '.embeddings[0]' >/dev/null 2>&1; then
+            echo "$resp" | jq -c '.embeddings[0]' > "${SCRIPT_DIR}/data/ask.queryvec.json"
+            embed_flags="--embeddings data/embeddings.json --query-vec data/ask.queryvec.json"
+          fi
+        fi
+      fi
+    fi
     if [[ -n "$tail_file" ]]; then
-      mnd ask-prompt --tail-file "$tail_file" --brain-dir data --out data/ask.prompt --question-out data/ask.question >&2
+      mnd ask-prompt --tail-file "$tail_file" --brain-dir data --out data/ask.prompt --question-out data/ask.question $embed_flags >&2
     elif [[ -n "$question" ]]; then
-      mnd ask-prompt --question "$question" --brain-dir data --out data/ask.prompt --question-out data/ask.question >&2
+      mnd ask-prompt --question "$question" --brain-dir data --out data/ask.prompt --question-out data/ask.question $embed_flags >&2
     else
       echo "usage: ./run-task.sh ask [--json] (--tail-file F | \"question\")" >&2; exit 1
     fi
@@ -303,7 +323,30 @@ case "$cmd" in
       --candidates data/eval/candidates.jsonl --out data/eval/cases.jsonl
     [[ -s "${SCRIPT_DIR}/data/eval/cases.jsonl" ]] || { echo "eval: no decision cases built from $n candidates — raise MND_EVAL_N" >&2; exit 1; }
     echo "[2/4] clone answering each case blind..." >&2
-    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir data --out-dir data/eval/asks
+    # Embed eval case situations for semantic retrieval (if embeddings + Ollama available)
+    eval_embed_flags=""
+    if [[ -s "${SCRIPT_DIR}/data/embeddings.json" ]] && [[ "${MND_EMBED:-auto}" != "off" ]]; then
+      embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+      embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+      if curl -s --max-time 2 "$embed_url/api/tags" >/dev/null 2>&1; then
+        mkdir -p "${SCRIPT_DIR}/data/eval/vecs"
+        echo "  embedding eval case situations..." >&2
+        while IFS= read -r case_line <&4; do
+          cid="$(echo "$case_line" | jq -r '.id')"
+          situation="$(echo "$case_line" | jq -r '.situation')"
+          resp="$(curl -s "$embed_url/api/embed" -d "$(jq -n --arg m "$embed_model" --arg t "$situation" '{model:$m, input:[$t]}')" 2>/dev/null || true)"
+          if echo "$resp" | jq -e '.embeddings[0]' >/dev/null 2>&1; then
+            echo "$resp" | jq -c '.embeddings[0]' > "${SCRIPT_DIR}/data/eval/vecs/case-${cid}.vec.json"
+          fi
+        done 4< "${SCRIPT_DIR}/data/eval/cases.jsonl"
+        nvecs="$(ls "${SCRIPT_DIR}/data/eval/vecs/"*.vec.json 2>/dev/null | wc -l)"
+        echo "  embedded $nvecs eval situations" >&2
+        if [[ "$nvecs" -gt 0 ]]; then
+          eval_embed_flags="--embeddings data/embeddings.json --query-vecs-dir data/eval/vecs"
+        fi
+      fi
+    fi
+    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir data --out-dir data/eval/asks $eval_embed_flags
     shopt -s nullglob
     for p in "${SCRIPT_DIR}"/data/eval/asks/case-*.prompt; do
       llm "$model" "$p" "${p%.prompt}.response" || echo "  $(basename "$p") ask failed — continuing" >&2
@@ -344,7 +387,30 @@ case "$cmd" in
     bdir="${MND_EVAL_BRAIN:-data}"
     rm -rf "${SCRIPT_DIR}/data/eval/asks"; mkdir -p "${SCRIPT_DIR}/data/eval/asks"
     echo "[1/3] re-asking $(wc -l < "${SCRIPT_DIR}/data/eval/cases.jsonl") cases blind (brain=$bdir)..." >&2
-    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir "$bdir" --out-dir data/eval/asks
+    # Embed eval cases for semantic retrieval if available
+    rerun_embed_flags=""
+    if [[ -s "${SCRIPT_DIR}/data/embeddings.json" ]] && [[ "${MND_EMBED:-auto}" != "off" ]]; then
+      embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+      embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+      if curl -s --max-time 2 "$embed_url/api/tags" >/dev/null 2>&1; then
+        mkdir -p "${SCRIPT_DIR}/data/eval/vecs"
+        echo "  embedding eval case situations..." >&2
+        while IFS= read -r case_line <&4; do
+          cid="$(echo "$case_line" | jq -r '.id')"
+          situation="$(echo "$case_line" | jq -r '.situation')"
+          resp="$(curl -s "$embed_url/api/embed" -d "$(jq -n --arg m "$embed_model" --arg t "$situation" '{model:$m, input:[$t]}')" 2>/dev/null || true)"
+          if echo "$resp" | jq -e '.embeddings[0]' >/dev/null 2>&1; then
+            echo "$resp" | jq -c '.embeddings[0]' > "${SCRIPT_DIR}/data/eval/vecs/case-${cid}.vec.json"
+          fi
+        done 4< "${SCRIPT_DIR}/data/eval/cases.jsonl"
+        nvecs="$(ls "${SCRIPT_DIR}/data/eval/vecs/"*.vec.json 2>/dev/null | wc -l)"
+        echo "  embedded $nvecs eval situations" >&2
+        if [[ "$nvecs" -gt 0 ]]; then
+          rerun_embed_flags="--embeddings data/embeddings.json --query-vecs-dir data/eval/vecs"
+        fi
+      fi
+    fi
+    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir "$bdir" --out-dir data/eval/asks $rerun_embed_flags
     shopt -s nullglob
     for p in "${SCRIPT_DIR}"/data/eval/asks/case-*.prompt; do
       llm "$model" "$p" "${p%.prompt}.response" || echo "  $(basename "$p") failed" >&2
