@@ -9,11 +9,11 @@
 # continuous feedback, not previews); --dry-run is the shared preview flag
 # here and in orchestrate-watch.sh.
 #
-# Safety valve (iter 10): a COMPETENCE GATE keyed on the question's category.
-# The clone is measured-reliable on some categories and not on judgment calls
-# (fidelity eval), and its self-reported confidence can't tell the two apart
-# (uniformly "high"). So reliable categories auto-answer; the rest escalate to
-# the real Tomas. MND_ROUTE_AUTO tunes the auto set; MND_ROUTE=off disables it.
+# Safety valve (iter 11): an EVIDENCE GATE based on embedding retrieval.
+# Instead of an LLM classifier (which didn't generalize), the gate inspects
+# what the brain's retrieval actually found: dominant category of retrieved
+# insights + semantic similarity. MND_ROUTE_AUTO tunes the auto set;
+# MND_ROUTE=off disables it.
 #
 # exit codes: 0 = sent (or dry-run) · 2 = escalated to DSH · 3 = no pending question
 set -euo pipefail
@@ -42,12 +42,13 @@ usage: ./orchestrate.sh <herdr-target> [--dry-run] [--escalate] [--lines N] [--m
   --lines N       terminal-tail lines to read (default 40)
   --model M       LLM preference: gemini (default) or claude — or env MND_ASK_MODEL
 
-competence gate (iter 10): the question is classified by category; reliable
-categories auto-answer, the rest escalate to Tomas (the real safety valve, since
-confidence is non-discriminating). Tune with:
+evidence gate (iter 11): after embedding retrieval, the gate inspects the
+dominant category + similarity of retrieved insights. Replaces the LLM classifier.
   MND_ROUTE=off              disable the gate (legacy: answer everything)
-  MND_ROUTE_AUTO=c1,c2       auto-answer categories (default correction_pattern,direction_pattern)
-                             categories: tech_preference decision_heuristic direction_pattern correction_pattern
+  MND_ROUTE_AUTO=c1,c2,c3    auto-answer categories (default correction_pattern,direction_pattern,tech_preference)
+  MND_ROUTE_MIN_MEAN=0.60   minimum mean cosine similarity
+  MND_ROUTE_MIN_MIN=0.40    minimum min cosine similarity
+  MND_ROUTE_MIN_DOM=0.50    minimum dominant category fraction
 
 exit codes: 0 = sent (or dry-run) · 2 = escalated to DSH · 3 = no pending question
 
@@ -156,25 +157,58 @@ if $escalate; then
   exit 2
 fi
 
-# Competence gate (iter 10): the confidence signal can't separate good answers
-# from bad (eval: uniformly "high"), so the real safety valve is the QUESTION
-# CATEGORY. The clone is measured-reliable on some categories (correction ~86%,
-# direction) and not on judgment calls (~38%); auto-answer the reliable ones,
-# route the rest to the real Tomas. Keyed on the question, never on self-report.
-# MND_ROUTE_AUTO = comma-list of auto-answer categories (default the measured-safe
-# set: delivered ~78% vs 59% blanket, 0 judgment leaks — data/route/report.md).
-# MND_ROUTE=off disables the gate (legacy answer-everything behavior).
+# Evidence gate (iter 11): replaces the classify-based category gate.
+# Instead of a standalone LLM classifier (which didn't generalize — 49%→11%),
+# the gate inspects what the brain's RETRIEVAL actually found: category
+# distribution, semantic similarity, dominance. The signal comes from embedding
+# retrieval (Ollama/nomic-embed-text on the local GPU), not from an LLM call.
+# MND_ROUTE_AUTO = auto-answer categories (default: correction+direction+tech).
+# MND_ROUTE=off = legacy answer-everything. Thresholds tuned from eval (iter 11).
 route_action="auto"; route_cat="(gate off)"
 if [[ "${MND_ROUTE:-on}" != "off" ]]; then
-  auto_set="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern}"
-  say "competence gate: classifying the question (auto set: $auto_set)..."
-  route_cat="$("${SCRIPT_DIR}/run-task.sh" classify --model "$model" --question-file data/ask.question 2>/dev/null || echo other)"
-  if [[ ",$auto_set," == *",$route_cat,"* ]]; then
-    route_action="auto"
-    say "competence gate: '$route_cat' is a reliable category -> auto-answer"
+  auto_set="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern,tech_preference}"
+  min_mean="${MND_ROUTE_MIN_MEAN:-0.60}"
+  min_min="${MND_ROUTE_MIN_MIN:-0.40}"
+  min_dom="${MND_ROUTE_MIN_DOM:-0.50}"
+  # Embed the question and run evidence retrieval
+  if [[ -s "${SCRIPT_DIR}/data/embeddings.json" ]]; then
+    say "evidence gate: embedding question + retrieving evidence..."
+    "${SCRIPT_DIR}/run-task.sh" embed-query --question-file data/ask.question \
+      > "${SCRIPT_DIR}/data/ask.queryvec.json" 2>/dev/null || true
+    if [[ -s "${SCRIPT_DIR}/data/ask.queryvec.json" ]]; then
+      rm -f "${SCRIPT_DIR}/data/ask.evidence.json"
+      mnd embed-evidence --embeddings data/embeddings.json \
+        --query-vec data/ask.queryvec.json --insights data/insights.yaml \
+        --out data/ask.evidence.json 2>/dev/null || true
+    fi
+  fi
+  if [[ -s "${SCRIPT_DIR}/data/ask.evidence.json" ]]; then
+    route_cat="$(jq -r '.dominant_category // "other"' "${SCRIPT_DIR}/data/ask.evidence.json")"
+    dom_frac="$(jq -r '.dominant_fraction // 0' "${SCRIPT_DIR}/data/ask.evidence.json")"
+    mean_sim="$(jq -r '.mean_similarity // 0' "${SCRIPT_DIR}/data/ask.evidence.json")"
+    min_sim="$(jq -r '.min_similarity // 0' "${SCRIPT_DIR}/data/ask.evidence.json")"
+    # Gate logic: auto if dominant category is in auto-set AND thresholds met
+    in_auto=false
+    IFS=',' read -ra _cats <<< "$auto_set"
+    for _c in "${_cats[@]}"; do [[ "$_c" == "$route_cat" ]] && in_auto=true; done
+    if $in_auto && (( $(echo "$mean_sim >= $min_mean" | bc -l) )) && \
+       (( $(echo "$min_sim >= $min_min" | bc -l) )) && \
+       (( $(echo "$dom_frac >= $min_dom" | bc -l) )); then
+      route_action="auto"
+      say "evidence gate: dominant=$route_cat ($(printf '%.0f' "$(echo "$dom_frac*100" | bc)")%), mean_sim=$(printf '%.2f' "$mean_sim") -> auto-answer"
+    else
+      route_action="escalate"
+      say "evidence gate: dominant=$route_cat ($(printf '%.0f' "$(echo "$dom_frac*100" | bc)")%), mean_sim=$(printf '%.2f' "$mean_sim") -> escalate to Tomas"
+    fi
   else
-    route_action="escalate"
-    say "competence gate: '$route_cat' is a judgment/low-fidelity category -> escalate to Tomas"
+    # Fallback: no embeddings available, use legacy classify gate
+    say "evidence gate: no embeddings — falling back to classify gate..."
+    route_cat="$("${SCRIPT_DIR}/run-task.sh" classify --model "$model" --question-file data/ask.question 2>/dev/null || echo other)"
+    if [[ ",$auto_set," == *",$route_cat,"* ]]; then
+      route_action="auto"
+    else
+      route_action="escalate"
+    fi
   fi
 fi
 
