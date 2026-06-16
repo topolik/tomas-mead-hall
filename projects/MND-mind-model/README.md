@@ -5,7 +5,7 @@ Distills Tomas's decision-making "brain" from Claude + Gemini session history an
 ```
 sessions (ro) → extract → moments.jsonl → distill (LLM) → data/insights.yaml
                                                   → profile (LLM) → data/profiles/*.md
-agent question → ask (BM25 retrieve + LLM) → Tomas-style direction + evidence citations
+agent question → embed (Ollama GPU) → evidence gate → ask (LLM) → Tomas-style direction + citations
 ```
 
 - **`data/profiles/*.md`** — the readable core: decision-making, technical preferences, direction style. Every line cites insight IDs.
@@ -13,6 +13,14 @@ agent question → ask (BM25 retrieve + LLM) → Tomas-style direction + evidenc
 - **`data/`** — gitignored: raw extracted moments, prompt/response files. Raw session content never gets committed.
 
 Sessions are mounted **read-only**; tool results are skipped at parse time and secret shapes are redacted before anything is written to disk or sent to an LLM.
+
+## Prerequisites
+
+- **Docker** with compose v2 (`docker compose`)
+- **NVIDIA GPU + drivers** — for embedding via Ollama (GTX 1080 or better, 8GB+ VRAM). Without GPU, Ollama falls back to CPU (~3min for full batch vs ~10s on GPU).
+- **nvidia-container-toolkit** — lets Docker pass the GPU through. Verify: `docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi`
+- **gemini-cli** (`npx @anthropic-ai/gemini-cli`) or **claude** — at least one LLM provider for distill/profile/ask
+- Run `./setup.sh` to provision DSH client, start Ollama, and pull the embedding model
 
 ## How to run
 
@@ -54,7 +62,7 @@ Every `retrain` run:
 | Env var | Default | Effect |
 |---|---|---|
 | `MND_FIDELITY_MIN_AUTO` | `75` | Minimum fidelity (%) for auto-answered categories |
-| `MND_ROUTE_AUTO` | `correction_pattern,direction_pattern` | Categories checked against the threshold |
+| `MND_ROUTE_AUTO` | `correction_pattern,direction_pattern,tech_preference` | Categories checked against the threshold |
 
 Retraining **never learns from the agent team's own output** (turn-level discrimination):
 - pipeline prompts carry the U+E000 datamark and known template phrases → dropped (`self=N` in extract stats)
@@ -128,11 +136,6 @@ herdr agent list                                  # find the agent waiting for d
 | `MND_ROUTE_AUTO` | `correction_pattern,direction_pattern,tech_preference` | Categories safe to auto-answer (91% fidelity measured) |
 | `MND_ROUTE_MIN_MEAN` | `0.60` | Minimum mean cosine similarity |
 | `MND_ROUTE_MIN_DOM` | `0.50` | Minimum dominant category fraction |
-| `MND_ROUTE` | `on` | Set `off` for legacy answer-everything behavior |
-
-| Env var | Default | Effect |
-|---|---|---|
-| `MND_ROUTE_AUTO` | `correction_pattern,direction_pattern` | Categories safe to auto-answer (78% fidelity, 0 judgment leaks) |
 | `MND_ROUTE` | `on` | Set `off` for legacy answer-everything behavior |
 
 Works with `hwt`-spawned agents out of the box (`hwt <branch>` → agent pane → `orchestrate.sh <pane>`).

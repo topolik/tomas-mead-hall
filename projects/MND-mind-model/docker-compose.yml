@@ -14,7 +14,6 @@ services:
       - ${MND_GEMINI_DIR:-~/.gemini/tmp}:/sessions/gemini:ro
       # Working data (gitignored) and the distilled brain (committed)
       - ./data:/app/data
-      - ./brain:/app/brain
 
   ollama:
     image: ollama/ollama
