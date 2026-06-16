@@ -404,7 +404,7 @@ case "$cmd" in
     mnd route-classify-merge --response data/route/classify.response \
       --cases data/eval/cases.jsonl --out data/route/labels.jsonl
     echo "[2/3] simulating routing against verdicts ($sc)..." >&2
-    auto_cats="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern}"
+    auto_cats="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern,tech_preference}"
     mnd route-sim --scored "$sc" --labels data/route/labels.jsonl \
       --auto-cats "$auto_cats" \
       --out-md data/route/report.md --out-json data/route/sweep.json \
@@ -490,13 +490,14 @@ case "$cmd" in
       echo "retrain: no brain changes — profiles unchanged" >&2
     else
       MND_GEMINI_MODEL="${MND_GEMINI_MODEL:-gemini-2.5-pro}" "$0" profile --model "$model"
-      echo "retrain: brain updated — profiles regenerated" >&2
+      "$0" embed-batch || echo "embed-batch failed — continuing retrain" >&2
+      echo "retrain: brain updated — profiles + embeddings regenerated" >&2
     fi
     # mandatory fidelity eval after every retrain
     echo "retrain: running fidelity eval..." >&2
     "$0" eval --model "$model"
     "$0" route-eval --model "$model"
-    auto_cats="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern}"
+    auto_cats="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern,tech_preference}"
     min_fidelity="${MND_FIDELITY_MIN_AUTO:-75}"
     if mnd fidelity-check --auto-cats "$auto_cats" --min-auto "$min_fidelity" \
          --eval-json data/eval/report.json --sweep-json data/route/sweep.json; then

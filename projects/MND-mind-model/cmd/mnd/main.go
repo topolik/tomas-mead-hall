@@ -1433,7 +1433,7 @@ func cmdFidelityCheck(args []string) error {
 	fs := flag.NewFlagSet("fidelity-check", flag.ExitOnError)
 	evalJSON := fs.String("eval-json", "data/eval/report.json", "eval report JSON")
 	sweepJSON := fs.String("sweep-json", "data/route/sweep.json", "route sweep JSON")
-	autoCats := fs.String("auto-cats", "correction_pattern,direction_pattern", "comma-separated auto-answer categories")
+	autoCats := fs.String("auto-cats", "correction_pattern,direction_pattern,tech_preference", "comma-separated auto-answer categories")
 	minAuto := fs.Float64("min-auto", 75, "minimum delivered fidelity (%) for auto-answered categories")
 	fs.Parse(args)
 

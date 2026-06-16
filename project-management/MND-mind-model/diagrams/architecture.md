@@ -42,24 +42,34 @@ graph TD
     I --> PP --> L2 --> P
     P --> AP
     I --> AP
-    Q["herdr agent question"] --> CL --> L4
-    L4 -->|"category ∈ auto set"| AP --> L3 --> A
-    L4 -->|"category ∉ auto set"| DSH["DSH escalation<br/>(Tomas reviews)"]
+    Q["herdr agent question"] --> AP --> L3 --> A
+    P --> AP
+    I --> AP
+    Q --> EMB["embed question<br/>(Ollama GPU)"]
+    EMB --> GATE["evidence gate<br/>(cosine top-k → category + similarity)"]
+    EMBS["data/embeddings.json"] --> GATE
+    GATE -->|"auto: safe category + high similarity"| DELIVER["deliver direction"]
+    GATE -->|"escalate: judgment / sparse / mixed"| DSH["DSH escalation<br/>(Tomas reviews)"]
+    A --> DELIVER
+    A --> DSH
     I --> EV --> L5 --> REP["fidelity report<br/>(per-category, calibration)"]
 ```
 
-## Competence gate (iteration 10)
+## Evidence gate (iteration 11)
 
 ```mermaid
 graph LR
-    Q["agent question"] --> CL["classify<br/>(cheap LLM)"]
-    CL -->|"correction_pattern<br/>direction_pattern"| AUTO["auto-answer<br/>(78% fidelity)"]
-    CL -->|"decision_heuristic<br/>tech_preference<br/>other"| ESC["escalate to Tomas<br/>(via DSH)"]
-    AUTO --> ASK["mnd ask → direction"]
-    ESC --> DSH["DSH notification"]
+    Q["agent question"] --> ASK["mnd ask<br/>(BM25 + LLM)"]
+    Q --> EMB["embed<br/>(Ollama GPU)"]
+    EMB --> COS["cosine top-k<br/>(pre-embedded insights)"]
+    COS --> GATE{"evidence gate"}
+    GATE -->|"dominant ∈ auto-set<br/>mean_sim ≥ 0.60<br/>dominance ≥ 50%"| AUTO["auto-answer<br/>(91% fidelity)"]
+    GATE -->|"judgment-dominant<br/>sparse / mixed"| ESC["escalate to Tomas"]
+    ASK --> AUTO
+    ASK --> ESC
 ```
 
-Routing keys on the **predicted question category**, not self-reported confidence (which is non-discriminating). The routing signal is validated externally via the eval judge. `MND_ROUTE_AUTO` tunes the auto set; `MND_ROUTE=off` disables.
+Routing keys on **what the brain actually found** (embedding retrieval evidence), not a standalone LLM classifier or self-reported confidence. The embedding call is local (Ollama + nomic-embed-text on GTX 1080 GPU) — no LLM call for routing. `MND_ROUTE_AUTO` tunes the auto set; `MND_ROUTE=off` disables.
 
 ## Data flow contract
 
@@ -69,17 +79,18 @@ Routing keys on the **predicted question category**, not self-reported confidenc
 | distill | moments.jsonl | `data/insights.yaml` — `{id, category, statement, confidence, evidence[]}` | yes, batched |
 | profile | insights.yaml | `brain/profiles/{decision-making,technical-preferences,direction-style}.md` | yes |
 | ask | question + data/ | direction + citations (text or JSON) | yes |
-| classify | question text | category label (one of 4 + `other`) | yes, single call |
+| embed-batch | insights.yaml | `data/embeddings.json` (768-dim vectors per insight) | no (Ollama local GPU) |
+| embed-query | question text | 768-dim vector | no (Ollama local GPU) |
+| evidence gate | query vector + embeddings + insights | gate decision (auto/escalate) + evidence metadata | no |
 | eval | data/ + sampled moments | fidelity report (per-category %, calibration, disagreement list) | yes, N+1 calls |
 
-## Categories (distill output → routing input)
+## Categories (distill output → evidence gate input)
 
-| Category | Gold fidelity | Predicted fidelity | Route default |
+| Category | Fidelity (21 cases) | Embedding dominant% | Route default |
 |---|---|---|---|
-| `correction_pattern` | 67% | **86%** | ✅ auto |
-| `direction_pattern` | 57% | 64% | ✅ auto |
-| `tech_preference` | 80% | 50% | ❌ escalate |
-| `decision_heuristic` | 38% | 42% | ❌ escalate |
-| `other` | — | 50% | ❌ escalate |
+| `correction_pattern` | 93% | 58–83% when dominant | ✅ auto |
+| `direction_pattern` | 100% | 50–92% when dominant | ✅ auto |
+| `tech_preference` | — (0 gold in set) | 50–92% when dominant | ✅ auto |
+| `decision_heuristic` | 72% | 50–83% when dominant | ❌ escalate |
 
-Gold ≠ predicted: the classifier is 49% accurate but the *predicted* buckets it gets right are reliably high-fidelity. Tech is best by gold but unreliable by predicted (over-assigned).
+Routing signal comes from embedding retrieval (dominant category of top-k insights), not an LLM classifier. Tech re-included: adding it raised fidelity 87%→91% with +19% coverage.

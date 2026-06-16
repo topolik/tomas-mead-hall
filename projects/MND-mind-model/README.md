@@ -24,8 +24,10 @@ Sessions are mounted **read-only**; tool results are skipped at parse time and s
 ./run-task.sh ask "Should the new agent service use Postgres or a flat file?"
 ./run-task.sh ask --json "..."        # machine-readable: {"answer", "confidence", "citations", "pending"}
 ./run-task.sh pipeline [--limit N]    # extract + distill + profile
-./run-task.sh retrain                 # learn + regen + mandatory fidelity eval + threshold check
-./run-task.sh classify --question "..." # classify a question's category (for routing)
+./run-task.sh retrain                 # learn + regen + embed + mandatory fidelity eval
+./run-task.sh embed-start             # start Ollama GPU + pull nomic-embed-text model
+./run-task.sh embed-batch             # embed all active insights → data/embeddings.json (delta)
+./run-task.sh embed-query "question"  # embed a single question → stdout JSON vector
 ./run-task.sh eval                    # fidelity eval: sample → blind clone answer → judge → report
 ./run-task.sh route-eval              # sweep routing policies: coverage vs fidelity frontier
 ./run-task.sh contradictions          # loop-until-dry contradiction sweep
@@ -39,13 +41,13 @@ All commands accept `--model gemini|claude` (default: gemini). LLM calls route t
 ## Retraining (continuous learning)
 
 ```bash
-./run-task.sh retrain          # learn + regen + mandatory fidelity eval + threshold check
+./run-task.sh retrain          # learn + regen + embed + mandatory fidelity eval
 ./run-task.sh watch-retrain    # daemon — MND_RETRAIN_INTERVAL seconds between runs (default 86400)
 ```
 
 Every `retrain` run:
 1. Extract new moments, distill, learn from DSH feedback, contradiction sweep
-2. Regenerate profiles if the brain changed
+2. Regenerate profiles + **re-embed insights** (delta: only new/changed) if the brain changed
 3. **Mandatory fidelity eval** — `eval` + `route-eval` against the updated brain
 4. **Threshold check** — if auto-set delivered fidelity drops below `MND_FIDELITY_MIN_AUTO` (default **75%**), or judgment questions leak into auto-answer, a **DSH `action_needed` alert fires** (Q1 priority)
 
@@ -62,10 +64,10 @@ Retraining **never learns from the agent team's own output** (turn-level discrim
 
 ## Feedback loop (DSH)
 
-When the competence gate classifies a question outside the auto-answer set, the orchestrator escalates instead of guessing:
+When the evidence gate escalates (judgment-dominant retrieval, sparse evidence, or low similarity), the orchestrator escalates instead of guessing:
 
 ```
-orchestrate.sh (competence gate: category not in MND_ROUTE_AUTO)
+orchestrate.sh (evidence gate: dominant category not in MND_ROUTE_AUTO, or low similarity)
   → DSH notification [action_needed/Q1]: agent's question + brain's best guess
   → you dismiss it WITH A COMMENT containing your direction
   → ./run-task.sh learn  (also runs inside retrain)
@@ -105,7 +107,7 @@ grep -c -E 'ghp_[A-Za-z0-9]{20}|sk-[A-Za-z0-9_-]{16}|AKIA[0-9A-Z]{16}' data/mome
 ./run-task.sh ask --json "<question you would ask Tomas>"
 ```
 
-Returns `{"answer": "...", "confidence": "high|medium|low", "pending": "question|none", "citations": ["insight-id", ...]}`. Citations resolve in `data/insights.yaml` — each carries the session evidence that backs the direction. `pending: none` means the agent isn't actually asking anything. Note: confidence is **not reliable for routing** (uniformly `high` in eval) — the competence gate uses question category instead.
+Returns `{"answer": "...", "confidence": "high|medium|low", "pending": "question|none", "citations": ["insight-id", ...]}`. Citations resolve in `data/insights.yaml` — each carries the session evidence that backs the direction. `pending: none` means the agent isn't actually asking anything.
 
 ## Orchestrating herdr agents
 
@@ -115,10 +117,18 @@ herdr agent list                                  # find the agent waiting for d
 ./orchestrate.sh <pane-or-terminal-id> --send     # deliver it into the agent's pane
 ```
 
-`orchestrate.sh` reads the tail of the agent's terminal, extracts its pending question, and runs a **two-stage safety gate**:
+`orchestrate.sh` reads the tail of the agent's terminal, extracts its pending question, and runs an **evidence gate** based on embedding retrieval:
 
-1. **Competence gate** — classifies the question's category via a cheap LLM call. Categories in `MND_ROUTE_AUTO` (default: `correction_pattern,direction_pattern`) proceed to answer; all others escalate to Tomas via DSH. This replaced the broken confidence-based gate (confidence was uniformly `high` while 41% wrong).
-2. **Answer + deliver** — asks the mind model, delivers direction into the pane (with `--send`).
+1. **Answer** — asks the mind model (BM25 retrieval + LLM)
+2. **Embed + retrieve** — embeds the question via Ollama (local GPU), cosine-retrieves the top-k insights from pre-embedded insight vectors
+3. **Evidence gate** — inspects the retrieved set's dominant category, similarity scores, and dominance fraction. Auto-answers if dominant category ∈ `MND_ROUTE_AUTO` and similarity/dominance thresholds are met; escalates otherwise.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `MND_ROUTE_AUTO` | `correction_pattern,direction_pattern,tech_preference` | Categories safe to auto-answer (91% fidelity measured) |
+| `MND_ROUTE_MIN_MEAN` | `0.60` | Minimum mean cosine similarity |
+| `MND_ROUTE_MIN_DOM` | `0.50` | Minimum dominant category fraction |
+| `MND_ROUTE` | `on` | Set `off` for legacy answer-everything behavior |
 
 | Env var | Default | Effect |
 |---|---|---|

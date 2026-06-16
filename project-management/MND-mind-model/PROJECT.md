@@ -1,11 +1,11 @@
 # MND — Mind Model
 
 - **Code:** MND
-- **Status:** Iteration 10 complete, pending review — competence-boundary routing built and measured (78% delivered fidelity at 42% coverage, 0 judgment leaks). Replaces broken confidence gate.
+- **Status:** Iteration 11 in progress — embedding-based retrieval + evidence gate. Ollama GPU + nomic-embed-text (768-dim). 91% fidelity at 57% coverage with tech_preference in auto-set. Replaces broken LLM classifier.
 - **Priority:** Q2
 - **Lead:** Developer
 - **Created:** 2026-06-12
-- **Last updated:** 2026-06-15
+- **Last updated:** 2026-06-16
 - **Current phase started:** 2026-06-15
 
 ## Overview
