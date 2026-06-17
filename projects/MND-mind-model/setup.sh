@@ -43,6 +43,38 @@ CREDS
   fi
 fi
 
+# ── Ollama (embedding provider) ─────────────────────────────────────────
+
+HAS_GPU=false
+if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+  HAS_GPU=true
+fi
+
+if $HAS_GPU; then
+  if docker compose --profile embed up -d ollama 2>/dev/null; then
+    for i in 1 2 3 4 5; do
+      curl -sf http://localhost:11434/api/tags &>/dev/null && break
+      sleep 2
+    done
+    if curl -sf http://localhost:11434/api/tags &>/dev/null; then
+      if curl -sf http://localhost:11434/api/tags | grep -q nomic-embed-text; then
+        ok "Ollama running, nomic-embed-text already pulled"
+      else
+        echo "  Pulling nomic-embed-text (~300MB)..."
+        curl -sf http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}' | tail -1
+        ok "Ollama running, nomic-embed-text pulled"
+      fi
+    else
+      warn "Ollama started but not responding — run './run-task.sh embed-start' manually"
+    fi
+  else
+    warn "Failed to start Ollama — run './run-task.sh embed-start' manually"
+  fi
+else
+  warn "No NVIDIA GPU detected — Ollama embedding will run on CPU (slower, ~3min for full batch)"
+  warn "For GPU: install nvidia-container-toolkit and ensure 'nvidia-smi' works"
+fi
+
 # ── LLM provider detection ──────────────────────────────────────────────
 
 HAS_GEMINI=false

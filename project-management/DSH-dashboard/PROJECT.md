@@ -1,7 +1,7 @@
 # Dashboard
 
 - **Code:** DSH
-- **Status:** Implementation (Iteration 028) — fix Tailscale phone passkey enrollment (awaiting review)
+- **Status:** Review complete (Iteration 029) — Tailscale phone passkey enrollment fix shipped
 - **Priority:** Q2 — Important, Not Urgent
 - **Lead:** Developer
 - **Created:** 2026-05-27
@@ -26,7 +26,7 @@ graph LR
 ```
 
 ## Current State
-Iteration 028 — **Fix Tailscale phone passkey enrollment** (branch `dsh-taila-fix`, awaiting Tomas review). Phone couldn't get in: the only on-demand path to register a phone passkey (the boot-time setup token printed by `run.sh`) had a 10-min TTL anchored to container start, so on a days-up container it was always expired and `run.sh` couldn't re-mint it without a restart. Added an authenticated on-demand enrollment flow — **Passkeys → "Add a new device"** mints a fresh, generation-anchored, one-time token and shows a **QR** pointing at the Tailscale origin; scan it on the phone to register a passkey bound to the correct RPID. Also hardened `waForRequest` to a deterministic RP fallback. Full unit + integration tests green; live-binary smoke verified end-to-end (production container untouched). See iteration 028, [DSH-031], [DSH-032].
+Iteration 029 — **Review complete.** Tailscale phone passkey enrollment fix (iteration 028, branch `dsh-taila-fix`) accepted and ready to merge. On-demand device enrollment via **Passkeys → "Add a new device"** (QR + link to Tailscale origin), generation-anchored token TTL, deterministic RP fallback. See [DSH-031], [DSH-032].
 
 Previous — Iteration 026 — **Threads** shipped: durable M:N discussions attachable to notifications/plans/projects; agents post via JWT API with authenticated authorship, Tomas replies in the UI; `[discuss]`/💬 links on notification rows; nav badge counts open threads. This is the re-scoped L32+L33 (ideation 024): herdr/MND own the *live* agent-direction channel, DSH owns the *durable* one. First consumer: GML processed-tracking (`?ref_type=notification&ref_id=N&status=resolved` ⇒ skip re-distilling) — GML-side adoption is a `[GML]` backlog entry. Real-data acceptance test ready, pending a live-DB copy.
 

@@ -222,10 +222,30 @@ case "$cmd" in
       esac
       i=$((i+1))
     done
+    # Embedding retrieval: if embeddings exist and Ollama is up, embed the question
+    # and pass vectors to ask-prompt for semantic retrieval. Falls back to BM25.
+    embed_flags=""
+    if [[ -s "${SCRIPT_DIR}/data/embeddings.json" ]] && [[ "${MND_EMBED:-auto}" != "off" ]]; then
+      embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+      embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+      if curl -s --max-time 2 "$embed_url/api/tags" >/dev/null 2>&1; then
+        q_for_embed="${question:-}"
+        if [[ -n "$tail_file" ]]; then
+          q_for_embed="$(cat "$tail_file")"
+        fi
+        if [[ -n "$q_for_embed" ]]; then
+          resp="$(curl -s "$embed_url/api/embed" -d "$(jq -n --arg m "$embed_model" --arg t "$q_for_embed" '{model:$m, input:[$t]}')" 2>/dev/null || true)"
+          if echo "$resp" | jq -e '.embeddings[0]' >/dev/null 2>&1; then
+            echo "$resp" | jq -c '.embeddings[0]' > "${SCRIPT_DIR}/data/ask.queryvec.json"
+            embed_flags="--embeddings data/embeddings.json --query-vec data/ask.queryvec.json"
+          fi
+        fi
+      fi
+    fi
     if [[ -n "$tail_file" ]]; then
-      mnd ask-prompt --tail-file "$tail_file" --brain-dir brain --out data/ask.prompt --question-out data/ask.question >&2
+      mnd ask-prompt --tail-file "$tail_file" --brain-dir data --out data/ask.prompt --question-out data/ask.question $embed_flags >&2
     elif [[ -n "$question" ]]; then
-      mnd ask-prompt --question "$question" --brain-dir brain --out data/ask.prompt --question-out data/ask.question >&2
+      mnd ask-prompt --question "$question" --brain-dir data --out data/ask.prompt --question-out data/ask.question $embed_flags >&2
     else
       echo "usage: ./run-task.sh ask [--json] (--tail-file F | \"question\")" >&2; exit 1
     fi
@@ -303,7 +323,30 @@ case "$cmd" in
       --candidates data/eval/candidates.jsonl --out data/eval/cases.jsonl
     [[ -s "${SCRIPT_DIR}/data/eval/cases.jsonl" ]] || { echo "eval: no decision cases built from $n candidates — raise MND_EVAL_N" >&2; exit 1; }
     echo "[2/4] clone answering each case blind..." >&2
-    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir brain --out-dir data/eval/asks
+    # Embed eval case situations for semantic retrieval (if embeddings + Ollama available)
+    eval_embed_flags=""
+    if [[ -s "${SCRIPT_DIR}/data/embeddings.json" ]] && [[ "${MND_EMBED:-auto}" != "off" ]]; then
+      embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+      embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+      if curl -s --max-time 2 "$embed_url/api/tags" >/dev/null 2>&1; then
+        mkdir -p "${SCRIPT_DIR}/data/eval/vecs"
+        echo "  embedding eval case situations..." >&2
+        while IFS= read -r case_line <&4; do
+          cid="$(echo "$case_line" | jq -r '.id')"
+          situation="$(echo "$case_line" | jq -r '.situation')"
+          resp="$(curl -s "$embed_url/api/embed" -d "$(jq -n --arg m "$embed_model" --arg t "$situation" '{model:$m, input:[$t]}')" 2>/dev/null || true)"
+          if echo "$resp" | jq -e '.embeddings[0]' >/dev/null 2>&1; then
+            echo "$resp" | jq -c '.embeddings[0]' > "${SCRIPT_DIR}/data/eval/vecs/case-${cid}.vec.json"
+          fi
+        done 4< "${SCRIPT_DIR}/data/eval/cases.jsonl"
+        nvecs="$(ls "${SCRIPT_DIR}/data/eval/vecs/"*.vec.json 2>/dev/null | wc -l)"
+        echo "  embedded $nvecs eval situations" >&2
+        if [[ "$nvecs" -gt 0 ]]; then
+          eval_embed_flags="--embeddings data/embeddings.json --query-vecs-dir data/eval/vecs"
+        fi
+      fi
+    fi
+    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir data --out-dir data/eval/asks $eval_embed_flags
     shopt -s nullglob
     for p in "${SCRIPT_DIR}"/data/eval/asks/case-*.prompt; do
       llm "$model" "$p" "${p%.prompt}.response" || echo "  $(basename "$p") ask failed — continuing" >&2
@@ -341,10 +384,33 @@ case "$cmd" in
     # moved fidelity, without rebuilding the case set. MND_EVAL_BRAIN points at a
     # dev brain copy (iteration 9 tooling).
     [[ -s "${SCRIPT_DIR}/data/eval/cases.jsonl" ]] || { echo "no data/eval/cases.jsonl — run eval first" >&2; exit 1; }
-    bdir="${MND_EVAL_BRAIN:-brain}"
+    bdir="${MND_EVAL_BRAIN:-data}"
     rm -rf "${SCRIPT_DIR}/data/eval/asks"; mkdir -p "${SCRIPT_DIR}/data/eval/asks"
     echo "[1/3] re-asking $(wc -l < "${SCRIPT_DIR}/data/eval/cases.jsonl") cases blind (brain=$bdir)..." >&2
-    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir "$bdir" --out-dir data/eval/asks
+    # Embed eval cases for semantic retrieval if available
+    rerun_embed_flags=""
+    if [[ -s "${SCRIPT_DIR}/data/embeddings.json" ]] && [[ "${MND_EMBED:-auto}" != "off" ]]; then
+      embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+      embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+      if curl -s --max-time 2 "$embed_url/api/tags" >/dev/null 2>&1; then
+        mkdir -p "${SCRIPT_DIR}/data/eval/vecs"
+        echo "  embedding eval case situations..." >&2
+        while IFS= read -r case_line <&4; do
+          cid="$(echo "$case_line" | jq -r '.id')"
+          situation="$(echo "$case_line" | jq -r '.situation')"
+          resp="$(curl -s "$embed_url/api/embed" -d "$(jq -n --arg m "$embed_model" --arg t "$situation" '{model:$m, input:[$t]}')" 2>/dev/null || true)"
+          if echo "$resp" | jq -e '.embeddings[0]' >/dev/null 2>&1; then
+            echo "$resp" | jq -c '.embeddings[0]' > "${SCRIPT_DIR}/data/eval/vecs/case-${cid}.vec.json"
+          fi
+        done 4< "${SCRIPT_DIR}/data/eval/cases.jsonl"
+        nvecs="$(ls "${SCRIPT_DIR}/data/eval/vecs/"*.vec.json 2>/dev/null | wc -l)"
+        echo "  embedded $nvecs eval situations" >&2
+        if [[ "$nvecs" -gt 0 ]]; then
+          rerun_embed_flags="--embeddings data/embeddings.json --query-vecs-dir data/eval/vecs"
+        fi
+      fi
+    fi
+    mnd eval-ask-prompts --cases data/eval/cases.jsonl --brain-dir "$bdir" --out-dir data/eval/asks $rerun_embed_flags
     shopt -s nullglob
     for p in "${SCRIPT_DIR}"/data/eval/asks/case-*.prompt; do
       llm "$model" "$p" "${p%.prompt}.response" || echo "  $(basename "$p") failed" >&2
@@ -404,35 +470,112 @@ case "$cmd" in
     mnd route-classify-merge --response data/route/classify.response \
       --cases data/eval/cases.jsonl --out data/route/labels.jsonl
     echo "[2/3] simulating routing against verdicts ($sc)..." >&2
+    auto_cats="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern,tech_preference}"
     mnd route-sim --scored "$sc" --labels data/route/labels.jsonl \
+      --auto-cats "$auto_cats" \
       --out-md data/route/report.md --out-json data/route/sweep.json \
       --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "[3/3] report: ${SCRIPT_DIR}/data/route/report.md" >&2
     ;;
 
+  # --- Embedding (iter 11) ----------------------------------------------------
+
+  embed-start)
+    # Start Ollama with GPU, pull model if needed. Idempotent.
+    docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --profile embed up -d ollama
+    echo "waiting for Ollama..." >&2
+    for i in $(seq 1 30); do
+      curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1 && break
+      sleep 1
+    done
+    curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1 || { echo "Ollama failed to start" >&2; exit 1; }
+    # Pull model if not present
+    embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+    if ! curl -s http://localhost:11434/api/tags | grep -q "\"$embed_model\""; then
+      echo "pulling $embed_model..." >&2
+      curl -s http://localhost:11434/api/pull -d "{\"name\":\"$embed_model\"}" | tail -1
+    fi
+    echo "Ollama ready (model: $embed_model)" >&2
+    ;;
+
+  embed-batch)
+    # Embed all active insights → data/embeddings.json. Delta: only new/changed.
+    embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+    embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+    # Ensure Ollama is up
+    curl -s --max-time 2 "$embed_url/api/tags" >/dev/null 2>&1 || "$0" embed-start
+    echo "[1/3] loading insights and existing embeddings..." >&2
+    mnd embed-plan --insights data/insights.yaml --embeddings data/embeddings.json \
+      --model "$embed_model" --texts-out data/embed-batch.jsonl
+    n="$(wc -l < "${SCRIPT_DIR}/data/embed-batch.jsonl" 2>/dev/null || echo 0)"
+    if [[ "$n" -eq 0 ]]; then
+      echo "embed-batch: all insights already embedded — nothing to do" >&2
+      exit 0
+    fi
+    echo "[2/3] embedding $n insights via $embed_model..." >&2
+    # Batch in chunks of 100 (Ollama handles large batches but be safe)
+    > "${SCRIPT_DIR}/data/embed-responses.jsonl"
+    while IFS= read -r batch; do
+      curl -s "$embed_url/api/embed" -d "$batch" >> "${SCRIPT_DIR}/data/embed-responses.jsonl"
+      echo "" >> "${SCRIPT_DIR}/data/embed-responses.jsonl"
+    done < "${SCRIPT_DIR}/data/embed-batch.jsonl"
+    echo "[3/3] merging into embeddings store..." >&2
+    mnd embed-merge --responses data/embed-responses.jsonl --plan data/embed-batch.jsonl \
+      --embeddings data/embeddings.json --model "$embed_model"
+    echo "embed-batch: done ($(grep -c '"id"' "${SCRIPT_DIR}/data/embeddings.json" 2>/dev/null || echo 0) total vectors)" >&2
+    ;;
+
+  embed-query)
+    # Embed a single question → stdout JSON vector.
+    embed_model="${MND_EMBED_MODEL:-nomic-embed-text}"
+    embed_url="${MND_EMBED_URL:-http://localhost:11434}"
+    q=""
+    i=0
+    while [[ $i -lt ${#pass_args[@]} ]]; do
+      case "${pass_args[$i]}" in
+        --question-file) i=$((i+1)); q="$(cat "${pass_args[$i]}")" ;;
+        *) q="${pass_args[$i]}" ;;
+      esac
+      i=$((i+1))
+    done
+    [[ -n "$q" ]] || { echo "usage: ./run-task.sh embed-query (--question-file F | \"question\")" >&2; exit 1; }
+    resp="$(curl -s "$embed_url/api/embed" -d "$(jq -n --arg m "$embed_model" --arg t "$q" '{model:$m, input:[$t]}')")"
+    echo "$resp" | jq -c '.embeddings[0]'
+    ;;
+
   retrain)
-    # Incremental learning pass: new moments only (processed ledger +
-    # self-exclusion do the filtering). Profiles regenerate only when the
-    # brain actually changed. Large profile prompt needs a pinned model
-    # (MND-011) — overridable via MND_GEMINI_MODEL.
     before="$(sha256sum "${SCRIPT_DIR}/data/insights.yaml" 2>/dev/null | cut -d' ' -f1 || true)"
     "$0" extract
     "$0" distill --model "$model" "${pass_args[@]}"
-    # feedback loop: Tomas's DSH comments (skipped gracefully without dsh.yaml)
     if [[ -f "${SCRIPT_DIR}/data/dsh.yaml" ]]; then
       "$0" learn --model "$model" || echo "learn failed — continuing retrain" >&2
     fi
-    # contradiction sweep: retire beliefs newer corrections supersede (MND-025).
-    # Runs after learn so fresh feedback insights win the conflicts they settle.
     "$0" contradictions --model "$model" || echo "contradiction sweep failed — continuing retrain" >&2
     after="$(sha256sum "${SCRIPT_DIR}/data/insights.yaml" 2>/dev/null | cut -d' ' -f1 || true)"
     if [[ "$before" == "$after" ]]; then
       echo "retrain: no brain changes — profiles unchanged" >&2
     else
       MND_GEMINI_MODEL="${MND_GEMINI_MODEL:-gemini-2.5-pro}" "$0" profile --model "$model"
-      echo "retrain: brain updated (new insights and/or retired contradictions), profiles regenerated" >&2
+      "$0" embed-batch || echo "embed-batch failed — continuing retrain" >&2
+      echo "retrain: brain updated — profiles + embeddings regenerated" >&2
     fi
-    echo "retrain: brain updated — run ./backup.sh to persist" >&2
+    # mandatory fidelity eval after every retrain
+    echo "retrain: running fidelity eval..." >&2
+    "$0" eval --model "$model"
+    "$0" route-eval --model "$model"
+    auto_cats="${MND_ROUTE_AUTO:-correction_pattern,direction_pattern,tech_preference}"
+    min_fidelity="${MND_FIDELITY_MIN_AUTO:-75}"
+    if mnd fidelity-check --auto-cats "$auto_cats" --min-auto "$min_fidelity" \
+         --eval-json data/eval/report.json --sweep-json data/route/sweep.json; then
+      echo "retrain: fidelity check passed" >&2
+    else
+      echo "retrain: ⚠ FIDELITY BELOW THRESHOLD — escalating to DSH" >&2
+      if [[ -f "${SCRIPT_DIR}/data/dsh.yaml" ]]; then
+        alert_msg="[MND fidelity-alert] Post-retrain fidelity dropped below ${min_fidelity}% for auto-set (${auto_cats}). Review data/eval/report.md and data/route/report.md."
+        mnd fidelity-alert --config data/dsh.yaml --message "$alert_msg" || echo "DSH alert failed" >&2
+      fi
+    fi
+    echo "retrain: done — run ./backup.sh to persist" >&2
     ;;
 
   watch-retrain)

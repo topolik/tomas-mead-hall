@@ -49,12 +49,11 @@ impls:
     concurrency: 1
     price: { in: 0, out: 0 }
 
-  # Claude via the host CLI (reuses the host subscription — free). The [1m]
-  # suffix selects the 1M-context variant (verified accepted by `claude --model`).
+  # Claude via the host CLI (reuses the host subscription — free).
   claude:
     type: cli
     command: ["claude", "-p", "--output-format", "text"]
-    model_id: "claude-opus-4-8[1m]"      # Opus 4.8, 1M context
+    model_id: "claude-opus-4-8"
     model_flag: "--model"
     timeout: 300s
     cooldown: 60s
@@ -94,7 +93,7 @@ impls:
   claude2:
     type: cli
     command: ["claude", "-p", "--output-format", "text"]
-    model_id: "claude-opus-4-7[1m]"      # Opus 4.7, 1M context
+    model_id: "claude-opus-4-7"
     model_flag: "--model"
     timeout: 300s
     cooldown: 60s
@@ -102,13 +101,14 @@ impls:
     concurrency: 1
     price: { in: 0, out: 0 }
 
-  # OpenLLM / any OpenAI-compatible HTTP endpoint. STUBBED (empty base_url
-  # disables it). Point base_url at Ollama / a remote API / OpenRouter to enable.
-  openllm:
+  # Ollama (local, GPU-accelerated). Speaks the OpenAI-compatible /v1 API.
+  # Start with: ./setup.sh [model]   (default: dolphin3:8b)
+  # Set base_url to "" to disable (the router skips unavailable impls).
+  ollama:
     type: http
-    base_url: ""
-    api_key_env: OPENLLM_API_KEY
-    model_id: ""
+    base_url: "http://127.0.0.1:11434/v1"
+    api_key_env: ""
+    model_id: "dolphin3:8b"
     timeout: 180s
     cooldown: 60s
     concurrency: 1
@@ -117,7 +117,7 @@ impls:
 # Logical model name -> ordered failover chain ("most capable with quota wins").
 # auto alternates sides so a one-side outage still has the other side near the top.
 models:
-  auto:        { chain: [gemini, claude, gemini2, claude2, openllm] }
+  auto:        { chain: [gemini, claude, gemini2, claude2, ollama] }
   gml-analyze: { chain: [gemini-flash, gemini2, claude2] }   # flash primary (tested: comparable quality, ~10x cheaper), pro+claude fallback
 
 default_model: auto

@@ -64,6 +64,7 @@ func (c *Config) Origins() []string {
 // ExternalOrigin returns the first configured origin whose host is not a
 // loopback address — i.e. the URL a phone or other device actually uses
 // (e.g. https://dsh-1.your-tailnet.ts.net). Device-enrollment links must point
+// (e.g. https://dsh-1.your-tailnet.ts.net). Device-enrollment links must point
 // here, never at localhost. Falls back to the first origin, then to Origin.
 func (c *Config) ExternalOrigin() string {
 	origins := c.Origins()

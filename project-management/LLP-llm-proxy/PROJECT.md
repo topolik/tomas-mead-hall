@@ -1,11 +1,11 @@
 # LLP — LLM Proxy (Gateway)
 
 - **Code:** LLP
-- **Status:** Implementation (Iteration 009) — SSE streaming on /v1/chat/completions (façade-level, LLP-018); iteration 008 merged to master (Tomas-accepted); awaiting Tomas's runtime verification of :4000 + push
+- **Status:** Implementation (Iteration 011) — Ollama backend wired; pending review
 - **Priority:** Q2 (Important, Not Urgent) — force-multiplier infrastructure for every agent
 - **Lead:** Developer
 - **Created:** 2026-06-12
-- **Last updated:** 2026-06-13
+- **Last updated:** 2026-06-17
 - **Current phase started:** 2026-06-12
 
 ## Overview
@@ -18,7 +18,7 @@ graph LR
     OTHER[Future agents] -->|/v1/chat/completions| LLP
     LLP -->|exec, default| GEM[Gemini CLI]
     LLP -->|exec, 2nd| CLA[Claude CLI]
-    LLP -->|HTTP, 3rd| OLL[OpenLLM / OpenAI-compatible<br/>→ Ollama / remote / OpenRouter]
+    LLP -->|HTTP, 3rd| OLL[Ollama<br/>local GPU container, dolphin3:8b]
 ```
 (Full diagram: `diagrams/architecture.md`)
 
@@ -45,5 +45,9 @@ Log: `iterations/008-security-quota-healthz.md`.
 (`chat.completion.chunk` events, usage in the final chunk, `[DONE]`; LLP-018); failover/queue/
 usage identical to the non-streaming path; works for all impls incl. openllm (enabling it stays
 config-only, LLP-007). **63 tests pass (race-clean)**, live-verified via real gemini (`curl -N`).
-Log: `iterations/009-streaming.md`. **Awaiting Tomas's runtime verification of :4000 + push.**
-Possible next: wire OpenLLM live (config), true pass-through streaming (LLP-018 revisit), DSH usage view.
+Log: `iterations/009-streaming.md`. **Reviewed and accepted by Tomas 2026-06-15** (`iterations/010-review.md`).
+**Iteration 011** (this branch): Ollama backend wired — the v1 `openllm` stub (LLP-007) replaced
+by a live `ollama` impl (Docker container, GPU, `dolphin3:8b`). Zero Go code changes: the existing
+`HttpProvider` works unmodified against Ollama's OpenAI-compatible `/v1` API. Live-verified:
+completions, streaming, model override, usage tracking. **63 tests pass.** LLP-019.
+Possible next: true pass-through streaming (LLP-018 revisit), DSH usage view.
