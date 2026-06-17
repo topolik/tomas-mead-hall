@@ -8,6 +8,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
+export UID="$(id -u)"
+export GID="$(id -g)"
 
 OP_ITEM_TOKEN="GML Gmail Read-Only Credentials"
 OP_ITEM_TOKEN_RULES="GML Gmail Read-Write Credentials"
@@ -53,8 +55,9 @@ send_rules_creds() {
   fi
 }
 
-# LLP socket: mount into container so the LLM handshake works
-LLP_SOCKET="${LLP_SOCKET:-${HOME}/.llp/control.sock}"
+# LLP proxy: default URL + socket, mount socket into container for handshake
+export LLP_URL="${LLP_URL:-http://localhost:4000}"
+export LLP_SOCKET="${LLP_SOCKET:-${HOME}/.llp/control.sock}"
 extra_args=()
 if [[ -S "$LLP_SOCKET" ]]; then
   extra_args+=(-v "${LLP_SOCKET}:${LLP_SOCKET}" -e "LLP_SOCKET=${LLP_SOCKET}")
