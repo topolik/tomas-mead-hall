@@ -2,9 +2,10 @@
 # Secrets (client bearer keys, remote API keys) are read from the environment,
 # never from this file. Copy to config.yaml and adjust.
 #
-# Capability ladder (Tomas, 2026-06-14): two gemini tiers + two claude tiers,
-# most-capable first. `auto` walks them; a quota-exhausted tier cools down and
-# later requests skip past it. Model ids verified live against the host CLIs.
+# Capability ladder (updated 2026-06-17): three gemini tiers + two claude tiers.
+# `auto` walks them most-capable first; `gml-analyze` leads with gemini-2.5-flash
+# (tested: comparable quality to pro on 12 real emails, ~10x cheaper).
+# A quota-exhausted tier cools down and later requests skip past it.
 
 port: 4000
 bind_host: "127.0.0.1"      # loopback by default — the data API is not reachable off-host
@@ -62,6 +63,20 @@ impls:
     price: { in: 0, out: 0 }
 
   # --- Tier 2: previous-generation flagships ------------------------------
+  gemini-flash:
+    type: cli
+    # same security flags as the gemini tier (LLP-014) — do not drop --approval-mode default
+    command: ["npx", "@google/gemini-cli", "-e", "none", "--approval-mode", "default", "-p", ""]
+    env:
+      GOOGLE_CLOUD_PROJECT: "your-gcp-project-id"
+    model_id: "gemini-2.5-flash"
+    model_flag: "-m"
+    timeout: 300s
+    cooldown: 60s
+    quota_cooldown: 30m
+    concurrency: 1
+    price: { in: 0, out: 0 }
+
   gemini2:
     type: cli
     # same security flags as the gemini tier (LLP-014) — do not drop --approval-mode default
@@ -103,6 +118,6 @@ impls:
 # auto alternates sides so a one-side outage still has the other side near the top.
 models:
   auto:        { chain: [gemini, claude, gemini2, claude2, openllm] }
-  gml-analyze: { chain: [gemini2, claude2] }   # bulk analyze on the cheaper pair (2.5-pro / opus-4-7)
+  gml-analyze: { chain: [gemini-flash, gemini2, claude2] }   # flash primary (tested: comparable quality, ~10x cheaper), pro+claude fallback
 
 default_model: auto
