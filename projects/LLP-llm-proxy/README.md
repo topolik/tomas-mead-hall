@@ -13,7 +13,7 @@ CLIs directly, GML calls the proxy.
 - **Backends (impls), in failover order:**
   1. **Gemini CLI** (default) — execs `npx @google/gemini-cli`, reuses the host's Cloud-project auth (free).
   2. **Claude CLI** — execs `claude -p`, reuses the host subscription (free).
-  3. **Ollama** (local, GPU-accelerated) — speaks the OpenAI `/v1` API. Start with `./setup-ollama.sh` (pulls `dolphin3:8b` by default). Set `base_url: ""` in config to disable.
+  3. **Ollama** (local, GPU-accelerated) — speaks the OpenAI `/v1` API. Start with `./setup.sh` (pulls `dolphin3:8b` by default). Set `base_url: ""` in config to disable.
 - **Failover:** on a retryable failure (rate-limit/quota, non-zero exit, timeout, HTTP 429/5xx) the router tries the next impl and puts a rate-limited impl on cooldown. A **quota-exhausted** failure (gemini's `TerminalQuotaError` daily limit, claude's "usage limit reached") gets the longer `quota_cooldown` (30m in the example config) instead of the 60s throttle cooldown. Terminal errors (HTTP 400/401/403) are returned as-is.
 - **Queue:** per-impl concurrency cap (default 1 ⇒ serialized) — the guard against token/quota exhaustion.
 - **Usage:** one SQLite row per request (agent, impl, tokens, cost, latency, status); aggregated at `/admin/usage`.
@@ -34,8 +34,8 @@ chains, timeouts, the bind host, or the control-socket path.
 **Ollama backend** (optional — the router skips it when Ollama isn't running):
 
 ```bash
-./setup-ollama.sh           # starts the container (GPU), pulls dolphin3:8b
-./setup-ollama.sh llama3.1:8b   # or pull a different model
+./setup.sh           # starts the container (GPU), pulls dolphin3:8b
+./setup.sh llama3.1:8b   # or pull a different model
 ```
 
 **Run in the background** (tmux daemon, same pattern as GML's `watch.sh`):
@@ -165,7 +165,7 @@ internal/openai/           OpenAI-compatible request/response types
 internal/registry/         config load + logical-model → failover-chain resolution
 internal/provider/         Provider interface; CliProvider (gemini/claude), HttpProvider (ollama)
 docker-compose.yml         Ollama container (GPU, network_mode: host → 127.0.0.1:11434)
-setup-ollama.sh            Start container + pull model
+setup.sh                   Start Ollama container + pull model
 internal/router/           failover walk + per-impl concurrency + cooldown
 internal/usage/            SQLite usage/cost store + aggregation
 internal/auth/             bearer-token → agent

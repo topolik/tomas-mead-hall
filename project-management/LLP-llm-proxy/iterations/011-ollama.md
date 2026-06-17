@@ -11,7 +11,7 @@ as a Docker container with GPU passthrough. Renames the config impl from `openll
 ## Changes
 
 - `docker-compose.yml` — Ollama container, `network_mode: host`, NVIDIA GPU, persistent volume
-- `setup-ollama.sh` — start container + pull model (default `dolphin3:8b`)
+- `setup.sh` — start container + pull model (default `dolphin3:8b`)
 - `config.example.yaml` — `openllm` → `ollama` with live `base_url: http://127.0.0.1:11434/v1`; added `ollama` to `gml-analyze` chain as backstop
 - `config-ollama-test.yaml` — standalone test config (ollama-only, port 4002)
 - `smoke.sh` — tests `ollama` and `ollama/dolphin3:8b` when Ollama is running
