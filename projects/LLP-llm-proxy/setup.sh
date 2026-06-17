@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-ollama.sh — start the Ollama container and pull the default model.
+# setup.sh — start the Ollama container and pull the default model.
 # GPU-accelerated via NVIDIA runtime (GTX 1080 / 8GB VRAM).
 set -euo pipefail
 cd "$(dirname "$0")"

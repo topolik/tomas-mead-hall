@@ -87,7 +87,7 @@ impls:
     price: { in: 0, out: 0 }
 
   # Ollama (local, GPU-accelerated). Speaks the OpenAI-compatible /v1 API.
-  # Start with: ./setup-ollama.sh [model]   (default: dolphin3:8b)
+  # Start with: ./setup.sh [model]   (default: dolphin3:8b)
   # Set base_url to "" to disable (the router skips unavailable impls).
   ollama:
     type: http

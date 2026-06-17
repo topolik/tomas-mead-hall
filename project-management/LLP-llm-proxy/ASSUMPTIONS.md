@@ -225,6 +225,6 @@ Two adapter shapes implement the `Provider` interface: `CliProvider` (#1, #2) an
 
 **Rationale:** Closes the "built-but-stubbed" gap (LLP-007): the failover chain now has a concrete backstop that runs locally with zero API cost. `dolphin3:8b` fits the GTX 1080's 8GB VRAM comfortably (4.9GB) and handles GML's structured-output (JSON) tasks well. Container + `network_mode: host` follows the house style (MO §1) while staying reachable by the host-bound LLP binary (LLP-006). No API key needed — Ollama has no auth on its local endpoint.
 
-**Affected areas:** `config.example.yaml` (impl rename + base_url), `docker-compose.yml` (new), `setup-ollama.sh` (new), `smoke.sh` (ollama test), failover chains (`auto`, `gml-analyze`), README.
+**Affected areas:** `config.example.yaml` (impl rename + base_url), `docker-compose.yml` (new), `setup.sh` (new), `smoke.sh` (ollama test), failover chains (`auto`, `gml-analyze`), README.
 
 **Revisit if:** the host gets more VRAM (upgrade to a larger default model), or Ollama needs to run on a separate GPU box (change `base_url` and potentially add auth).

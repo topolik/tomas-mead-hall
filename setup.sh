@@ -156,6 +156,23 @@ else
   warn "LLP build failed — will retry on first ./run.sh"
 fi
 
+# Ollama (optional — needs NVIDIA GPU + nvidia-container-toolkit)
+if command -v nvidia-smi >/dev/null 2>&1; then
+  echo ""
+  echo "  NVIDIA GPU detected. Ollama provides a free local LLM backend (failover backstop)."
+  if ask_yn "Set up Ollama now? (pulls ~5GB model on first run)"; then
+    if (cd "${LLP_DIR}" && ./setup.sh); then
+      ok "Ollama ready (dolphin3:8b)"
+    else
+      warn "Ollama setup failed — run projects/LLP-llm-proxy/setup.sh later"
+    fi
+  else
+    ok "Ollama setup skipped (run projects/LLP-llm-proxy/setup.sh later)"
+  fi
+else
+  ok "No NVIDIA GPU — Ollama skipped (LLP will use CLI providers only)"
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 4. DSH — Dashboard & Tailscale
 # ═══════════════════════════════════════════════════════════════════════════
