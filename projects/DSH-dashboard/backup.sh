@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# backup.sh — encrypted backup of DSH's SQLite database.
-# If DSH is running, uses SQLite's hot-backup API via docker exec.
-# If DSH is stopped, copies the db file directly from the volume.
+# backup.sh — encrypted backup of DSH's SQLite database and .env.
 #
 # Passphrase: $BACKUP_PASSPHRASE env var, or prompted interactively.
 # Output:     $BACKUP_DIR/dsh-<timestamp>.db.gz.enc (default ~/.local/share/dsh/backups/)
 set -euo pipefail
-cd "$(dirname "$0")"
+
+SRC="${REPO_ROOT:-$(git worktree list --porcelain | head -1 | sed 's/^worktree //')}/projects/DSH-dashboard"
+cd "$SRC"
 
 BACKUP_DIR="${BACKUP_DIR:-$HOME/.local/share/dsh/backups}"
 KEEP_DAYS=30
@@ -50,7 +50,16 @@ OUTFILE="$BACKUP_DIR/dsh-$TIMESTAMP.db.gz.enc"
 gzip -c "$TMPFILE" | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 \
   -pass pass:"$PASS" -out "$OUTFILE"
 
-find "$BACKUP_DIR" -name 'dsh-*.enc' -mtime "+$KEEP_DAYS" -delete
+find "$BACKUP_DIR" -name 'dsh-*.db.gz.enc' -mtime "+$KEEP_DAYS" -delete
 
-echo "✅ Backup: $OUTFILE"
-echo "   Restore: ./restore.sh $OUTFILE"
+echo "✅ DB backup: $OUTFILE"
+
+if [ -f .env ]; then
+  ENV_OUT="$BACKUP_DIR/dsh-$TIMESTAMP.env.enc"
+  echo "📦 Backing up DSH .env:"
+  echo "     .env"
+  openssl enc -aes-256-cbc -pbkdf2 -iter 600000 \
+    -pass pass:"$PASS" -in .env -out "$ENV_OUT"
+  find "$BACKUP_DIR" -name 'dsh-*.env.enc' -mtime "+$KEEP_DAYS" -delete
+  echo "✅ Env backup: $ENV_OUT"
+fi

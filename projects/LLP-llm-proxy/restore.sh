@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# restore.sh — restore MND brain from an encrypted backup.
+# restore.sh — restore LLP state from an encrypted backup.
 # Usage: ./restore.sh <backup.tar.gz.enc>
 set -euo pipefail
 
-SRC="${REPO_ROOT:-$(git worktree list --porcelain | head -1 | sed 's/^worktree //')}/projects/MND-mind-model"
+SRC="${REPO_ROOT:-$(git worktree list --porcelain | head -1 | sed 's/^worktree //')}/projects/LLP-llm-proxy"
 cd "$SRC"
 
 if [ $# -ne 1 ]; then
@@ -24,12 +24,12 @@ else
   [ -n "$PASS" ] || { echo "❌ Passphrase required." >&2; exit 1; }
 fi
 
-echo "🧠 Restoring MND brain from $BACKUP_FILE..."
-mkdir -p data/profiles data
+echo "🔀 Restoring LLP state from $BACKUP_FILE..."
+mkdir -p data
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 \
   -pass pass:"$PASS" -in "$BACKUP_FILE" | tar xzf -
 
-chmod 600 data/dsh.yaml 2>/dev/null || true
+chmod 600 config.yaml 2>/dev/null || true
 
 echo "✅ Restore complete."
 echo "   Restored files:"

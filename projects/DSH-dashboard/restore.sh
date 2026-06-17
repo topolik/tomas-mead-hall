@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# restore.sh — restore DSH database from an encrypted backup.
+# restore.sh — restore DSH database and .env from encrypted backups.
 # If DSH is running, stops it before restore and restarts after.
-# Works with or without a running DSH container.
 #
 # Usage: ./restore.sh <backup.db.gz.enc>
 set -euo pipefail
-cd "$(dirname "$0")"
+
+SRC="${REPO_ROOT:-$(git worktree list --porcelain | head -1 | sed 's/^worktree //')}/projects/DSH-dashboard"
+cd "$SRC"
 
 if [ $# -ne 1 ]; then
   echo "Usage: $0 <backup.db.gz.enc>" >&2
@@ -60,6 +61,15 @@ if [ "$WAS_RUNNING" = true ]; then
   docker compose start dsh
 fi
 
-echo "✅ Restore complete."
+echo "✅ DB restore complete."
 echo "   Restored files:"
 echo "     /data/dsh.db"
+
+ENV_BACKUP="${BACKUP_FILE%.db.gz.enc}.env.enc"
+if [ -f "$ENV_BACKUP" ]; then
+  echo "📦 Restoring .env from $ENV_BACKUP..."
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 \
+    -pass pass:"$PASS" -in "$ENV_BACKUP" -out .env
+  chmod 600 .env
+  echo "     .env"
+fi

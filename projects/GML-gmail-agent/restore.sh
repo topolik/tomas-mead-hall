@@ -2,7 +2,9 @@
 # restore.sh — restore GML state from an encrypted backup.
 # Usage: ./restore.sh <backup.tar.gz.enc>
 set -euo pipefail
-cd "$(dirname "$0")"
+
+SRC="${REPO_ROOT:-$(git worktree list --porcelain | head -1 | sed 's/^worktree //')}/projects/GML-gmail-agent"
+cd "$SRC"
 
 if [ $# -ne 1 ]; then
   echo "Usage: $0 <backup.tar.gz.enc>" >&2
