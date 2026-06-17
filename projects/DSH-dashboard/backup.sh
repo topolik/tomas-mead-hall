@@ -32,12 +32,14 @@ trap 'shred -u "$TMPFILE" 2>/dev/null || rm -f "$TMPFILE"' EXIT
 CONTAINER=$(docker compose ps -q dsh 2>/dev/null || true)
 
 if [ -n "$CONTAINER" ]; then
-  echo "📦 Backing up DSH database (hot backup)..."
+  echo "📦 Backing up DSH database (hot backup):"
+  echo "     /data/dsh.db"
   docker exec "$CONTAINER" sqlite3 /data/dsh.db ".backup /tmp/dsh-backup.db"
   docker cp "$CONTAINER:/tmp/dsh-backup.db" "$TMPFILE"
   docker exec "$CONTAINER" rm -f /tmp/dsh-backup.db
 else
-  echo "📦 Backing up DSH database (cold copy)..."
+  echo "📦 Backing up DSH database (cold copy):"
+  echo "     /data/dsh.db"
   docker run --rm -v "$VOLUME":/data:ro \
     alpine cat /data/dsh.db > "$TMPFILE"
 fi

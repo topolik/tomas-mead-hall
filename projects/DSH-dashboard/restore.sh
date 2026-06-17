@@ -61,3 +61,5 @@ if [ "$WAS_RUNNING" = true ]; then
 fi
 
 echo "✅ Restore complete."
+echo "   Restored files:"
+echo "     /data/dsh.db"

@@ -32,7 +32,8 @@ fi
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 OUTFILE="$BACKUP_DIR/mnd-$TIMESTAMP.tar.gz.enc"
 
-echo "🧠 Backing up MND brain (${#FILES[@]} files)..."
+echo "🧠 Backing up MND brain (${#FILES[@]} files):"
+printf '     %s\n' "${FILES[@]}"
 tar czf - "${FILES[@]}" | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 \
   -pass pass:"$PASS" -out "$OUTFILE"
 
