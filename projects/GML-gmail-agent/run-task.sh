@@ -8,8 +8,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
-export UID="$(id -u)"
-export GID="$(id -g)"
+export HOST_UID="$(id -u)"
+export HOST_GID="$(id -g)"
 
 OP_ITEM_TOKEN="GML Gmail Read-Only Credentials"
 OP_ITEM_TOKEN_RULES="GML Gmail Read-Write Credentials"
