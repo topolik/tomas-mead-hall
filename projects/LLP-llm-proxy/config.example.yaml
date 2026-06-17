@@ -87,13 +87,13 @@ impls:
     price: { in: 0, out: 0 }
 
   # Ollama (local, GPU-accelerated). Speaks the OpenAI-compatible /v1 API.
-  # Start with: ./setup-ollama.sh [model]   (default: qwen2.5:7b)
+  # Start with: ./setup-ollama.sh [model]   (default: dolphin3:8b)
   # Set base_url to "" to disable (the router skips unavailable impls).
   ollama:
     type: http
     base_url: "http://127.0.0.1:11434/v1"
     api_key_env: ""
-    model_id: "qwen2.5:7b"
+    model_id: "dolphin3:8b"
     timeout: 180s
     cooldown: 60s
     concurrency: 1

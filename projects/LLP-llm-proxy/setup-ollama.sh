@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-MODEL="${1:-qwen2.5:7b}"
+MODEL="${1:-dolphin3:8b}"
 
 echo "Starting Ollama container…"
 docker compose up -d ollama

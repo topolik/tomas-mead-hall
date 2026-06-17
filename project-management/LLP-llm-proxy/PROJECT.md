@@ -18,7 +18,7 @@ graph LR
     OTHER[Future agents] -->|/v1/chat/completions| LLP
     LLP -->|exec, default| GEM[Gemini CLI]
     LLP -->|exec, 2nd| CLA[Claude CLI]
-    LLP -->|HTTP, 3rd| OLL[Ollama<br/>local GPU container, qwen2.5:7b]
+    LLP -->|HTTP, 3rd| OLL[Ollama<br/>local GPU container, dolphin3:8b]
 ```
 (Full diagram: `diagrams/architecture.md`)
 
@@ -47,7 +47,7 @@ usage identical to the non-streaming path; works for all impls incl. openllm (en
 config-only, LLP-007). **63 tests pass (race-clean)**, live-verified via real gemini (`curl -N`).
 Log: `iterations/009-streaming.md`. **Reviewed and accepted by Tomas 2026-06-15** (`iterations/010-review.md`).
 **Iteration 011** (this branch): Ollama backend wired — the v1 `openllm` stub (LLP-007) replaced
-by a live `ollama` impl (Docker container, GPU, `qwen2.5:7b`). Zero Go code changes: the existing
+by a live `ollama` impl (Docker container, GPU, `dolphin3:8b`). Zero Go code changes: the existing
 `HttpProvider` works unmodified against Ollama's OpenAI-compatible `/v1` API. Live-verified:
 completions, streaming, model override, usage tracking. **63 tests pass.** LLP-019.
 Possible next: true pass-through streaming (LLP-018 revisit), DSH usage view.

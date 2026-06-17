@@ -13,7 +13,7 @@ CLIs directly, GML calls the proxy.
 - **Backends (impls), in failover order:**
   1. **Gemini CLI** (default) — execs `npx @google/gemini-cli`, reuses the host's Cloud-project auth (free).
   2. **Claude CLI** — execs `claude -p`, reuses the host subscription (free).
-  3. **Ollama** (local, GPU-accelerated) — speaks the OpenAI `/v1` API. Start with `./setup-ollama.sh` (pulls `qwen2.5:7b` by default). Set `base_url: ""` in config to disable.
+  3. **Ollama** (local, GPU-accelerated) — speaks the OpenAI `/v1` API. Start with `./setup-ollama.sh` (pulls `dolphin3:8b` by default). Set `base_url: ""` in config to disable.
 - **Failover:** on a retryable failure (rate-limit/quota, non-zero exit, timeout, HTTP 429/5xx) the router tries the next impl and puts a rate-limited impl on cooldown. A **quota-exhausted** failure (gemini's `TerminalQuotaError` daily limit, claude's "usage limit reached") gets the longer `quota_cooldown` (30m in the example config) instead of the 60s throttle cooldown. Terminal errors (HTTP 400/401/403) are returned as-is.
 - **Queue:** per-impl concurrency cap (default 1 ⇒ serialized) — the guard against token/quota exhaustion.
 - **Usage:** one SQLite row per request (agent, impl, tokens, cost, latency, status); aggregated at `/admin/usage`.
@@ -34,7 +34,7 @@ chains, timeouts, the bind host, or the control-socket path.
 **Ollama backend** (optional — the router skips it when Ollama isn't running):
 
 ```bash
-./setup-ollama.sh           # starts the container (GPU), pulls qwen2.5:7b
+./setup-ollama.sh           # starts the container (GPU), pulls dolphin3:8b
 ./setup-ollama.sh llama3.1:8b   # or pull a different model
 ```
 

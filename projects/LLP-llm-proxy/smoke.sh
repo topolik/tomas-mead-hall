@@ -41,7 +41,7 @@ comp gemini/gemini-2.5-flash
 comp claude/haiku
 if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
   comp ollama
-  comp ollama/qwen2.5:7b
+  comp ollama/dolphin3:8b
 else
   printf '  %-28s -> %s\n' "ollama" "SKIPPED (not running)"
 fi
