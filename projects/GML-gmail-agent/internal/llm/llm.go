@@ -30,9 +30,15 @@ func NewFromEnv() *Client {
 
 func (c *Client) Available() bool { return c.URL != "" }
 
+func (c *Client) DisplayName(fallback string) string {
+	if c.Available() {
+		return "LLP/" + c.effectiveModel()
+	}
+	return fallback
+}
+
 func (c *Client) Call(model, promptText string) (string, error) {
 	if c.Available() {
-		fmt.Fprintf(os.Stderr, "  [LLP] routing via proxy at %s (model=%s)\n", c.URL, c.effectiveModel())
 		return c.llpCall(promptText)
 	}
 	return c.cliCall(model, promptText)
