@@ -1,12 +1,12 @@
 # GML — Gmail Agent
 
 - **Code:** GML
-- **Status:** Implementation (Iteration 023) — distilled-ledger processed-tracking (off DSH threads)
+- **Status:** Reviewed (Iteration 024) — Docker-first, no host binaries
 - **Priority:** Q2
 - **Lead:** Developer
 - **Created:** 2026-05-27
-- **Last updated:** 2026-06-14
-- **Current phase started:** 2026-06-14
+- **Last updated:** 2026-06-17
+- **Current phase started:** 2026-06-17
 
 ## Overview
 An agent that connects to Gmail via `gws` (Google Workspace CLI), produces inbox statistics, archives messages according to configurable rules, and provides AI-powered inbox analysis — reducing manual inbox maintenance overhead and surfacing insights via the DSH dashboard.
@@ -33,7 +33,7 @@ Mode 1, Mode 2, and Mode 3A complete, live-tested, and reviewed. Iteration 014 a
 - `gml run --dry-run --json` outputs structured JSON with reason for each rule match
 - Enhanced text output shows date and human-readable reason per action
 - Unified scheduler logging with reason context
-- Three-step pipeline: container fetch/sanitize → host LLM (Gemini default, Claude optional) → container validate/notify
+- Full-Docker pipeline: container fetch/sanitize → LLP proxy (Gemini default) → container validate/notify
 - Per-concern notifications with Eisenhower priority (🔴Q1 🟡Q2 🔵Q3 ⚪Q4) and Gmail search links
 - 5-layer prompt injection defense (datamarking, XML structure, sanitization, output validation, architectural constraint)
 - `./watch.sh` unified daemon manager: start/stop/restart/status/logs/attach for all 3 daemons with `--interval N` CLI control and persistent logging to `~/.local/share/gml/`
@@ -71,6 +71,10 @@ Mode 1, Mode 2, and Mode 3A complete, live-tested, and reviewed. Iteration 014 a
   skip-set = provenance ∪ ledger; `distill-apply` records the residual gap there. Removed the
   thread DSH-client methods. No DSH calls in the skip/record path (faster, no web-push, no UI
   clutter). Real-data verified against a live-DB copy. See ASSUMPTIONS GML-087.
+- **024 — Docker-first (no host binaries):** all GML commands now run inside Docker — no host Go
+  binary, no host gws, no npm. Credentials piped via stdin (never on disk). Container runs as host
+  uid/gid with `HOME=/tmp` for gws discovery cache. LLP socket auto-mounted. Pipeline step headers
+  show `LLP/<model>` instead of raw model name. DSH config moved exclusively to `dsh.yaml`.
 
 ## 1Password Items
 - **"GML Gmail Agent"** (Login) — OAuth client_id (username) + client_secret (password)
