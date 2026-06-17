@@ -50,10 +50,11 @@ type AnalysisConfig struct {
 }
 
 type LearnConfig struct {
-	Days       int `yaml:"days"`
-	MaxDays    int `yaml:"max_days"`
-	TopSenders int `yaml:"top_senders"`
-	MinEmails  int `yaml:"min_emails"`
+	Days                     int `yaml:"days"`
+	MaxDays                  int `yaml:"max_days"`
+	TopSenders               int `yaml:"top_senders"`
+	MinEmails                int `yaml:"min_emails"`
+	KnowledgeIntervalMinutes int `yaml:"knowledge_interval_minutes"`
 }
 
 func (l *LearnConfig) EffectiveDays() int {
@@ -82,6 +83,13 @@ func (l *LearnConfig) EffectiveMinEmails() int {
 		return 3
 	}
 	return l.MinEmails
+}
+
+func (l *LearnConfig) EffectiveKnowledgeIntervalMinutes() int {
+	if l.KnowledgeIntervalMinutes <= 0 {
+		return 5
+	}
+	return l.KnowledgeIntervalMinutes
 }
 
 type DSHConfig struct {
