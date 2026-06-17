@@ -27,24 +27,6 @@ daemon_command() {
   esac
 }
 
-GML_BIN="${SCRIPT_DIR}/data/.gml"
-ensure_binary() {
-  local needs_build=false
-  if [[ ! -f "$GML_BIN" ]]; then
-    needs_build=true
-  else
-    if find "${SCRIPT_DIR}" -name '*.go' -newer "$GML_BIN" -print -quit | grep -q .; then
-      needs_build=true
-    fi
-  fi
-  if $needs_build; then
-    echo "[gml] building binary..." >&2
-    (cd "$SCRIPT_DIR" && CGO_ENABLED=0 go build -o "$GML_BIN" ./cmd/gml/) || {
-      echo "error: go build failed" >&2; exit 1
-    }
-    echo "[gml] binary ready: $GML_BIN" >&2
-  fi
-}
 daemon_log() { echo "${LOG_DIR}/$1.log"; }
 
 is_running() { tmux has-session -t "$(daemon_session "$1")" 2>/dev/null; }
@@ -119,23 +101,11 @@ do_start() {
   local now
   now="$(date +%Y%m%dT%H%M%S)"
 
-  # analysis + knowledge run via the Go binary directly (pipeline commands);
-  # rules still uses run-task.sh (Docker + modify-scoped credentials)
-  local launch_cmd
-  if [[ "$daemon" == "analysis" || "$daemon" == "knowledge" ]]; then
-    ensure_binary
-    launch_cmd="$GML_BIN $cmd $*"
-    echo "  $daemon: starting (will call 1Password 'op' for Gmail credentials)..."
-  else
-    launch_cmd="${SCRIPT_DIR}/run-task.sh $cmd $*"
-    echo "  $daemon: starting..."
-  fi
+  local launch_cmd="${SCRIPT_DIR}/run-task.sh $cmd $*"
+  echo "  $daemon: starting..."
 
   tmux new-session -d -s "$session" "echo '# started $now' > $logfile; $launch_cmd 2>&1 | tee -a $logfile"
   echo "  $daemon: started (log: $logfile)"
-  if [[ "$daemon" == "analysis" || "$daemon" == "knowledge" ]]; then
-    echo "       (check 'op' biometric prompt if it exits immediately)"
-  fi
 }
 
 do_stop() {

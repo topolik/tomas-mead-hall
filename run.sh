@@ -41,9 +41,8 @@ run_step LLP "${REPO}/projects/LLP-llm-proxy/watch.sh" restart
 # ── 3/4  GML — gmail agent (tmux daemons: analysis, knowledge, rules) ───────
 step "3/4  GML — gmail agent"
 echo ""
-echo "  🔑 GML's analysis and knowledge daemons will request Gmail credentials"
-echo "     from 1Password (op) inside their tmux sessions."
-echo "     You may see a biometric/password prompt from 1Password — that's expected."
+echo "  🔑 GML daemons request Gmail credentials from 1Password (op)"
+echo "     inside their tmux sessions — biometric/password prompt expected."
 echo ""
 run_step GML "${REPO}/projects/GML-gmail-agent/watch.sh" restart
 
