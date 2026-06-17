@@ -53,10 +53,11 @@ send_rules_creds() {
   fi
 }
 
-# Extra volume mounts (LLP socket for LLM proxy)
+# LLP socket: mount into container so the LLM handshake works
+LLP_SOCKET="${LLP_SOCKET:-${HOME}/.llp/control.sock}"
 extra_args=()
-if [[ -n "${LLP_SOCKET:-}" && -S "$LLP_SOCKET" ]]; then
-  extra_args+=(-v "${LLP_SOCKET}:${LLP_SOCKET}")
+if [[ -S "$LLP_SOCKET" ]]; then
+  extra_args+=(-v "${LLP_SOCKET}:${LLP_SOCKET}" -e "LLP_SOCKET=${LLP_SOCKET}")
 fi
 
 docker_run() {

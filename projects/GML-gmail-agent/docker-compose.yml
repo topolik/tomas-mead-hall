@@ -8,6 +8,7 @@ services:
       - ./data:/app/data
     environment:
       GML_RULES: /app/data/rules.yaml
+      GML_DSH: /app/data/dsh.yaml
       GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND: file
       LLP_URL: ${LLP_URL:-}
       LLP_SOCKET: ${LLP_SOCKET:-}
