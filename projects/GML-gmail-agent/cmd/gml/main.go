@@ -1554,8 +1554,8 @@ func loadConfig() *config.Config {
 	}
 	if dsh, err := config.LoadDSH(dshPath); err == nil {
 		cfg.Analysis.DSH = *dsh
-	} else if cfg.Analysis.DSH.URL != "" {
-		fmt.Fprintf(os.Stderr, "warning: %s not found, using DSH config from rules.yaml\n", dshPath)
+	} else {
+		fmt.Fprintf(os.Stderr, "warning: %s: %v\n", dshPath, err)
 	}
 
 	return cfg
