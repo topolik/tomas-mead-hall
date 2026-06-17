@@ -5,13 +5,16 @@ services:
     build: .
     network_mode: host
     volumes:
-      - ./data/rules.yaml:/app/data/rules.yaml:ro
+      - ./data:/app/data
     environment:
       GML_RULES: /app/data/rules.yaml
       GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND: file
+      LLP_URL: ${LLP_URL:-}
+      LLP_SOCKET: ${LLP_SOCKET:-}
+      LLP_MODEL: ${LLP_MODEL:-}
     # Credentials are injected via stdin pipe — never written to disk inside the container.
     # Usage (via run-task.sh, which handles the op pipe):
+    #   ./run-task.sh analyze --hours 4
+    #   ./run-task.sh learn --days 7
     #   ./run-task.sh profile
-    #   ./run-task.sh stats
     #   ./run-task.sh run --dry-run
-    #   ./run-task.sh serve

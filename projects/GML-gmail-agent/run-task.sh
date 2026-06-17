@@ -1,60 +1,26 @@
 #!/usr/bin/env bash
-# run-task.sh — GML Gmail Agent: run a single task
-# Cycle: Analyze → Knowledge → Rules → (repeat, analysis excludes rule-matched emails)
-#
-# Pipeline commands (analyze, learn, distill, propose, apply-rules, watch-*)
-# are handled by the Go binary directly — no Docker, no bash orchestration.
-# This script builds the binary on first use and delegates.
-#
-# Remaining bash commands (run, watch-rules, profile, stats, etc.) still pipe
-# credentials through Docker for backward compatibility.
+# run-task.sh — GML Gmail Agent: run a single task inside Docker
+# All commands run via docker compose — the image bundles the Go binary and gws CLI.
 #
 # For daemon management use ./watch.sh instead.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-GML_BIN="${SCRIPT_DIR}/data/.gml"
+COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 
 OP_ITEM_TOKEN="GML Gmail Read-Only Credentials"
 OP_ITEM_TOKEN_RULES="GML Gmail Read-Write Credentials"
 OP_FIELD_TOKEN="credential"
 
-# Build the Go binary if missing or stale (any .go file newer than the binary).
-ensure_binary() {
-  local needs_build=false
-  if [[ ! -f "$GML_BIN" ]]; then
-    needs_build=true
-  else
-    if find "${SCRIPT_DIR}" -name '*.go' -newer "$GML_BIN" -print -quit | grep -q .; then
-      needs_build=true
-    fi
-  fi
-  if $needs_build; then
-    echo "[gml] building binary..." >&2
-    (cd "$SCRIPT_DIR" && CGO_ENABLED=0 go build -o "$GML_BIN" ./cmd/gml/) || {
-      echo "error: go build failed" >&2; exit 1
-    }
-    echo "[gml] binary ready: $GML_BIN" >&2
-  fi
-}
-
-# --- Pipeline commands: delegate to Go binary ---
-case "${1:-}" in
-  analyze|learn|distill|propose|apply-rules|watch-analysis|watch-knowledge)
-    ensure_binary
-    exec "$GML_BIN" "$@"
-    ;;
-esac
-
-# --- Credential helpers (for Docker-based commands) ---
-
 [[ -f "${SCRIPT_DIR}/data/rules.yaml" ]] || { echo "error: rules.yaml not found — see README.md for setup" >&2; exit 1; }
 
 if [[ $# -eq 0 ]]; then
-  ensure_binary
-  exec "$GML_BIN"
+  docker compose -f "$COMPOSE_FILE" run --rm -T gml
+  exit 0
 fi
+
+# --- Credential helpers ---
 
 pipe_creds() {
   op item get "$OP_ITEM_TOKEN" --fields "$OP_FIELD_TOKEN" --reveal --format json \
@@ -87,23 +53,36 @@ send_rules_creds() {
   fi
 }
 
-# --- run (apply archive rules — uses modify-scoped credentials) ---
-if [[ "$1" == "run" ]]; then
-  shift
-  send_rules_creds | docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm -T gml run "$@"
-  exit 0
+# Extra volume mounts (LLP socket for LLM proxy)
+extra_args=()
+if [[ -n "${LLP_SOCKET:-}" && -S "$LLP_SOCKET" ]]; then
+  extra_args+=(-v "${LLP_SOCKET}:${LLP_SOCKET}")
 fi
 
-# --- watch-rules (scheduled rules daemon — uses modify-scoped credentials) ---
-if [[ "$1" == "watch-rules" ]]; then
-  shift
-  send_rules_creds | docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm -T gml watch-rules "$@"
-  exit 0
-fi
+docker_run() {
+  docker compose -f "$COMPOSE_FILE" run --rm -T "${extra_args[@]}" gml "$@"
+}
 
-# All other commands: pipe read-only credentials to container
-knowledge_vol=""
-if [[ -f "${SCRIPT_DIR}/data/knowledge.yaml" ]]; then
-  knowledge_vol="-v ${SCRIPT_DIR}/data/knowledge.yaml:/app/data/knowledge.yaml:ro"
-fi
-send_creds | docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm -T $knowledge_vol gml "$@"
+# --- Route commands ---
+
+case "${1:-}" in
+  # Pipeline commands that need read-only credentials
+  analyze|learn|watch-analysis|watch-knowledge)
+    send_creds | docker_run "$@"
+    ;;
+
+  # Pipeline commands that don't need credentials
+  distill|propose|apply-rules)
+    docker_run "$@"
+    ;;
+
+  # Archive rules — uses modify-scoped credentials
+  run|watch-rules)
+    send_rules_creds | docker_run "$@"
+    ;;
+
+  # All other commands: pipe read-only credentials
+  *)
+    send_creds | docker_run "$@"
+    ;;
+esac

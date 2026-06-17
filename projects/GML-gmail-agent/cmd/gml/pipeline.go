@@ -23,10 +23,11 @@ func logf(format string, args ...interface{}) {
 }
 
 func pipelineLoadCreds() *creds.Creds {
-	logf("fetching credentials from 1Password (one-time)...")
-	cr, err := creds.LoadFromOP(creds.OPItemReadOnly, creds.OPField)
+	logf("loading credentials from stdin...")
+	cr, err := creds.Load(os.Stdin)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Pipeline credentials must be piped via stdin (run-task.sh handles this automatically)")
 		os.Exit(1)
 	}
 	logf("credentials loaded")

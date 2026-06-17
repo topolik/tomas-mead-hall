@@ -27,7 +27,7 @@ import (
 
 const usage = `gml — Gmail agent
 
-Pipeline commands (load credentials from 1Password, route LLM via LLP proxy):
+Pipeline commands (credentials via stdin, LLM via LLP proxy):
   gml analyze [--days N|--hours N|--minutes N] [--model gemini|claude]
   gml learn [--days N] [--model gemini|claude]
   gml distill [--model gemini|claude]
