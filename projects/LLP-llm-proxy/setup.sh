@@ -69,6 +69,8 @@ fi
 
 # ── 5. Ollama (optional — needs NVIDIA GPU) ──────────────────────────────
 
+OLLAMA_OK=false
+
 if command -v nvidia-smi >/dev/null 2>&1; then
   echo ""
   echo "  NVIDIA GPU detected. Ollama provides a free local LLM backend (failover backstop)."
@@ -83,16 +85,24 @@ if command -v nvidia-smi >/dev/null 2>&1; then
       if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
         break
       fi
-      [ "$i" -eq 30 ] && { warn "Ollama did not start in 30s"; return 0 2>/dev/null || exit 0; }
+      [ "$i" -eq 30 ] && { warn "Ollama did not start in 30s"; }
       sleep 1
     done
 
-    echo "  Pulling model $MODEL (this may take a few minutes on first run)…"
-    docker compose exec ollama ollama pull "$MODEL"
-    ok "Ollama ready ($MODEL)"
+    if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      echo "  Pulling model $MODEL (this may take a few minutes on first run)…"
+      docker compose exec ollama ollama pull "$MODEL"
+      ok "Ollama ready ($MODEL)"
+      OLLAMA_OK=true
+    fi
   else
     ok "Ollama skipped (re-run ./setup.sh or: docker compose up -d ollama)"
   fi
 else
   ok "No NVIDIA GPU — Ollama skipped (LLP will use CLI providers only)"
+fi
+
+if ! $OLLAMA_OK; then
+  sed -i 's|base_url: "http://127.0.0.1:11434/v1"|base_url: ""|' config.yaml
+  ok "Ollama disabled in config.yaml (set base_url to re-enable)"
 fi
