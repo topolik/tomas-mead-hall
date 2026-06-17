@@ -95,7 +95,7 @@ if ! $HAS_GEMINI && ! $HAS_CLAUDE; then
   echo ""
 fi
 
-# GCP project (needed for gemini-cli) — skip if LLP config already exists
+# GCP project (needed for gemini-cli) — passed to LLP's setup.sh
 if $HAS_GEMINI && [ ! -f "${REPO}/projects/LLP-llm-proxy/config.yaml" ]; then
   echo ""
   echo "  Gemini CLI needs a Google Cloud project ID."
@@ -106,7 +106,7 @@ if $HAS_GEMINI && [ ! -f "${REPO}/projects/LLP-llm-proxy/config.yaml" ]; then
   if [[ -n "$GCP_PROJECT" ]]; then
     ok "GCP project: $GCP_PROJECT"
   else
-    warn "No GCP project set — you'll need to edit config files manually"
+    warn "No GCP project set — LLP setup will ask, or edit config manually"
   fi
 elif $HAS_GEMINI; then
   ok "GCP project already configured in LLP config.yaml"
@@ -119,59 +119,7 @@ section "3/6  🔀 LLP — LLM Proxy"
 
 LLP_DIR="${REPO}/projects/LLP-llm-proxy"
 
-if [ -f "${LLP_DIR}/config.yaml" ]; then
-  ok "config.yaml already exists"
-else
-  cp "${LLP_DIR}/config.example.yaml" "${LLP_DIR}/config.yaml"
-  ok "config.yaml created from template"
-fi
-
-# Patch GCP project ID if provided
-if [[ -n "$GCP_PROJECT" ]]; then
-  sed -i "s/your-gcp-project-id/${GCP_PROJECT}/g" "${LLP_DIR}/config.yaml"
-  ok "GCP project ID set in config.yaml"
-fi
-
-# Disable providers that aren't available
-if ! $HAS_GEMINI; then
-  echo "  Gemini not available — commenting out gemini impls in config.yaml"
-  sed -i '/^  gemini:/,/^  [a-z]/{/^  gemini/s/^/# /; /^    /s/^/#   /}' "${LLP_DIR}/config.yaml" 2>/dev/null || true
-  sed -i '/^  gemini2:/,/^  [a-z]/{/^  gemini2/s/^/# /; /^    /s/^/#   /}' "${LLP_DIR}/config.yaml" 2>/dev/null || true
-  warn "Gemini impls disabled in config.yaml (no npx)"
-fi
-
-if ! $HAS_CLAUDE; then
-  echo "  Claude not available — commenting out claude impls in config.yaml"
-  sed -i '/^  claude:/,/^  [a-z]/{/^  claude:/s/^/# /; /^    /s/^/#   /}' "${LLP_DIR}/config.yaml" 2>/dev/null || true
-  sed -i '/^  claude2:/,/^  [a-z]/{/^  claude2/s/^/# /; /^    /s/^/#   /}' "${LLP_DIR}/config.yaml" 2>/dev/null || true
-  warn "Claude impls disabled in config.yaml (no claude CLI)"
-fi
-
-# Build LLP binary via Docker (no Go required on host)
-echo ""
-echo "  Building LLP binary (via Docker — no Go needed on host)..."
-if (cd "${LLP_DIR}" && docker build -f Dockerfile.build -o . . 2>&1); then
-  ok "LLP binary built"
-else
-  warn "LLP build failed — will retry on first ./run.sh"
-fi
-
-# Ollama (optional — needs NVIDIA GPU + nvidia-container-toolkit)
-if command -v nvidia-smi >/dev/null 2>&1; then
-  echo ""
-  echo "  NVIDIA GPU detected. Ollama provides a free local LLM backend (failover backstop)."
-  if ask_yn "Set up Ollama now? (pulls ~5GB model on first run)"; then
-    if (cd "${LLP_DIR}" && ./setup.sh); then
-      ok "Ollama ready (dolphin3:8b)"
-    else
-      warn "Ollama setup failed — run projects/LLP-llm-proxy/setup.sh later"
-    fi
-  else
-    ok "Ollama setup skipped (run projects/LLP-llm-proxy/setup.sh later)"
-  fi
-else
-  ok "No NVIDIA GPU — Ollama skipped (LLP will use CLI providers only)"
-fi
+(cd "$LLP_DIR" && GCP_PROJECT="$GCP_PROJECT" ./setup.sh)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 4. DSH — Dashboard & Tailscale
