@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -92,7 +93,7 @@ func TestTerminalStopsChain(t *testing.T) {
 	}
 }
 
-// T5: all retryable => aggregate error.
+// T5: all retryable => aggregate error listing every impl's failure.
 func TestAllFail(t *testing.T) {
 	a := &fakeProvider{name: "A", fn: func(int) (provider.Response, error) { return retryable() }}
 	b := &fakeProvider{name: "B", fn: func(int) (provider.Response, error) { return retryable() }}
@@ -100,6 +101,32 @@ func TestAllFail(t *testing.T) {
 	_, _, err := r.Do(context.Background(), []*registry.Impl{impl("A", a, time.Minute, 1), impl("B", b, time.Minute, 1)}, provider.Request{})
 	if err == nil {
 		t.Fatal("expected aggregate error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "transient") {
+		t.Fatalf("error should contain impl failures, got: %s", msg)
+	}
+	// Both A and B errors must appear (semicolon-joined), not just the last one.
+	if strings.Count(msg, "transient") < 2 {
+		t.Fatalf("error should list all impl failures, got: %s", msg)
+	}
+}
+
+// Unavailable + retryable: the aggregate error must list both reasons.
+func TestAllFailShowsAllReasons(t *testing.T) {
+	disabled := provider.NewHttp(provider.HttpConfig{Name: "ollama", BaseURL: ""})
+	a := &fakeProvider{name: "A", fn: func(int) (provider.Response, error) { return retryable() }}
+	r := New(nil)
+	_, _, err := r.Do(context.Background(), []*registry.Impl{
+		impl("A", a, time.Minute, 1),
+		impl("ollama", disabled, time.Minute, 1),
+	}, provider.Request{})
+	if err == nil {
+		t.Fatal("expected aggregate error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "transient") || !strings.Contains(msg, "not configured") {
+		t.Fatalf("error should contain both impl reasons, got: %s", msg)
 	}
 }
 

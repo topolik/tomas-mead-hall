@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,15 +78,15 @@ func (r *Router) Do(ctx context.Context, chain []*registry.Impl, req provider.Re
 	if len(chain) == 0 {
 		return "", provider.Response{}, errors.New("no impls available for requested model")
 	}
-	var lastErr error
+	var errs []string
 	for _, im := range chain {
 		if a, ok := im.Provider.(provider.Availabler); ok && !a.Available() {
-			lastErr = fmt.Errorf("%s: not configured", im.Name)
+			errs = append(errs, fmt.Sprintf("%s: not configured", im.Name))
 			continue
 		}
 		st := r.ensure(im)
 		if r.coolingDown(st) {
-			lastErr = fmt.Errorf("%s: cooling down", im.Name)
+			errs = append(errs, fmt.Sprintf("%s: cooling down", im.Name))
 			continue
 		}
 
@@ -103,7 +104,7 @@ func (r *Router) Do(ctx context.Context, chain []*registry.Impl, req provider.Re
 		if err == nil {
 			return im.Name, resp, nil
 		}
-		lastErr = err
+		errs = append(errs, err.Error())
 
 		var pe *provider.Error
 		if errors.As(err, &pe) {
@@ -120,7 +121,7 @@ func (r *Router) Do(ctx context.Context, chain []*registry.Impl, req provider.Re
 		}
 		// retryable or unknown error type: try the next impl
 	}
-	return "", provider.Response{}, fmt.Errorf("all impls failed: %w", lastErr)
+	return "", provider.Response{}, fmt.Errorf("all impls failed: %s", strings.Join(errs, "; "))
 }
 
 func (r *Router) coolingDown(st *implState) bool {
