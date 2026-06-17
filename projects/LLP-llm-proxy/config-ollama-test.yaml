@@ -1,0 +1,20 @@
+# Ollama integration test config — tests the HTTP provider against a live Ollama.
+# Port 4002 so it can run alongside the production instance on :4000.
+port: 4002
+db_path: ./data/llp-ollama-test.db
+max_prompt_bytes: 1048576
+
+impls:
+  ollama:
+    type: http
+    base_url: "http://127.0.0.1:11434/v1"
+    model_id: "qwen2.5:7b"
+    timeout: 180s
+    cooldown: 60s
+    concurrency: 1
+    price: { in: 0, out: 0 }
+
+models:
+  auto: { chain: [ollama] }
+
+default_model: auto
