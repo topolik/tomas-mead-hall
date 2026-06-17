@@ -830,3 +830,36 @@ Tomas chose to keep the cheap forward-preventive close).
 **Affected areas:** `internal/knowledge/knowledge.go` (`DistilledInsights`), `cmd/gml/main.go`
 (`distilledSet`, `selectUndistilled`, `appendDistilledLedger`, `cmdDistillGather`,
 `cmdDistillApply`); removed `internal/notify/dsh.go` thread methods.
+
+---
+
+## GML-088 — Docker-first: all commands run inside container, no host binaries
+
+**Decision:** All GML commands run inside the Docker container via `docker compose run`. No host Go
+binary, no host `gws` CLI, no npm. Credentials piped via stdin from host `op` CLI to container.
+
+**Rationale:** `gws` only exists inside the Docker image (installed via npm in the build stage).
+Running pipeline commands natively required `gws` on the host PATH, which broke. Instead of
+installing host dependencies, route everything through Docker — the image already bundles the
+complete toolchain. This aligns with MO §1: "Everything in containers."
+
+**Alternatives rejected:** Install `gws` on the host via npm (fragile, breaks the containers-only
+principle); hybrid approach with some commands native and some Docker (inconsistent, hard to debug).
+
+**Affected areas:** `run-task.sh` (full rewrite), `docker-compose.yml` (user mapping, env
+passthrough, data mount), `cmd/gml/pipeline.go` (stdin creds), `internal/llm/llm.go`
+(`DisplayName`).
+
+---
+
+## GML-088a — DSH config exclusively in dsh.yaml
+
+**Decision:** DSH credentials (`client_id`, `client_secret`, `url`) live only in `data/dsh.yaml`.
+Removed the duplicate from `rules.yaml`.
+
+**Rationale:** `rules.yaml` had stale DSH credentials (old OAuth client) causing 401 errors. The
+`dsh.yaml` override was added in iter 024 but the fallback to stale `rules.yaml` creds masked the
+fix when `dsh.yaml` was unreadable. Single source of truth eliminates credential drift.
+
+**Affected areas:** `data/rules.yaml` (removed `analysis.dsh` block), `cmd/gml/main.go` (simplified
+LoadDSH fallback warning).

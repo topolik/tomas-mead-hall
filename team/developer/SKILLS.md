@@ -145,6 +145,9 @@ Distilled capabilities gained from project work.
 - Bind-mount files read-write for container output (e.g. knowledge.yaml) — ensure `chmod 666` before mounting when container runs as a different UID than the host user
 - Add CLI tools to Alpine images via `apk add` in Dockerfile (e.g. `sqlite3` for backup scripts)
 - Run containers as non-root system user (`useradd -r -m`) — some CLIs (gws) require writable `$HOME` for discovery cache
+- Map container user to host uid/gid via `user: "${HOST_UID}:${HOST_GID}"` in compose — bash `UID` is readonly, use `HOST_UID` instead; when host uid has no passwd entry in the container, `HOME=/` (unwritable) — set `HOME=/tmp` in compose environment
+- Pipe credentials from host (`op` CLI) to container via stdin (`docker compose run --rm -T`) — credentials never touch disk inside the container
+- Mount host Unix sockets into containers for IPC (e.g. LLP control socket) via `-v` in `docker compose run` extra args; inject the socket path as env var since container `~` doesn't match host `~`
 
 ## Session-History Mining (MND)
 
