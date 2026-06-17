@@ -13,7 +13,7 @@ CLIs directly, GML calls the proxy.
 - **Backends (impls), in failover order:**
   1. **Gemini CLI** (default) — execs `npx @google/gemini-cli`, reuses the host's Cloud-project auth (free).
   2. **Claude CLI** — execs `claude -p`, reuses the host subscription (free).
-  3. **OpenLLM / OpenAI-compatible HTTP** — *stubbed in v1* (empty `base_url` ⇒ disabled). Point it at Ollama, a remote API, or OpenRouter to enable.
+  3. **Ollama** (local, GPU-accelerated) — speaks the OpenAI `/v1` API. Start with `./setup-ollama.sh` (pulls `dolphin3:8b` by default). Set `base_url: ""` in config to disable.
 - **Failover:** on a retryable failure (rate-limit/quota, non-zero exit, timeout, HTTP 429/5xx) the router tries the next impl and puts a rate-limited impl on cooldown. A **quota-exhausted** failure (gemini's `TerminalQuotaError` daily limit, claude's "usage limit reached") gets the longer `quota_cooldown` (30m in the example config) instead of the 60s throttle cooldown. Terminal errors (HTTP 400/401/403) are returned as-is.
 - **Queue:** per-impl concurrency cap (default 1 ⇒ serialized) — the guard against token/quota exhaustion.
 - **Usage:** one SQLite row per request (agent, impl, tokens, cost, latency, status); aggregated at `/admin/usage`.
@@ -29,7 +29,14 @@ cd projects/LLP-llm-proxy
 
 No keys to set up: provider auth (gemini/claude) uses the host CLIs' sessions; client auth is the
 control-socket handshake. Edit `config.yaml` (from `config.example.yaml`) to change models, failover
-chains, timeouts, the bind host, the control-socket path, or to enable the OpenLLM backend.
+chains, timeouts, the bind host, or the control-socket path.
+
+**Ollama backend** (optional — the router skips it when Ollama isn't running):
+
+```bash
+./setup-ollama.sh           # starts the container (GPU), pulls dolphin3:8b
+./setup-ollama.sh llama3.1:8b   # or pull a different model
+```
 
 **Run in the background** (tmux daemon, same pattern as GML's `watch.sh`):
 
@@ -61,11 +68,11 @@ The `model` field accepts three forms (OpenRouter-style):
 
 | `model` | Meaning |
 |---|---|
-| `auto`, `gml-analyze` | a **logical model** → its failover chain (`config.yaml` → `models`); `auto` = `[gemini, claude, openllm]` |
-| `gemini`, `claude`, `openllm` | **pin to one backend** (no failover) |
-| `gemini/gemini-2.5-pro`, `claude/sonnet` | **pin a backend + override its underlying model** for that request |
+| `auto`, `gml-analyze` | a **logical model** → its failover chain (`config.yaml` → `models`); `auto` = `[gemini, claude, gemini2, claude2, ollama]` |
+| `gemini`, `claude`, `ollama` | **pin to one backend** (no failover) |
+| `gemini/gemini-2.5-pro`, `claude/sonnet`, `ollama/llama3.1:8b` | **pin a backend + override its underlying model** for that request |
 
-Split on the first `/`, so override ids may contain `:`/`/` (e.g. `openllm/llama3.1:8b`). A defined
+Split on the first `/`, so override ids may contain `:`/`/` (e.g. `ollama/llama3.1:8b`). A defined
 logical model wins on exact match; an unknown model falls back to `default_model`. The response's
 `model` field reports which impl actually served it. Overriding a model requires the impl to have a
 `model_flag` configured (gemini `-m`, claude `--model` — both set in `config.example.yaml`).
@@ -84,7 +91,7 @@ curl -sN localhost:4000/v1/chat/completions \
 Streaming is **façade-level** (see `ASSUMPTIONS.md` LLP-018): the router first completes
 the request as usual — failover, queueing, and usage accounting are identical to the
 non-streaming path — then replays the result as chunk events. Works for every impl
-(gemini, claude, openllm). Errors are never streamed: failures return the regular JSON
+(gemini, claude, ollama). Errors are never streamed: failures return the regular JSON
 error envelope.
 
 ### Inspect
@@ -156,7 +163,9 @@ LLP_URL=http://localhost:4000 LLP_MODEL=gml-analyze ./run-task.sh analyze
 cmd/llp/main.go            entrypoint (load config → wire → ListenAndServe)
 internal/openai/           OpenAI-compatible request/response types
 internal/registry/         config load + logical-model → failover-chain resolution
-internal/provider/         Provider interface; CliProvider (gemini/claude), HttpProvider (openllm)
+internal/provider/         Provider interface; CliProvider (gemini/claude), HttpProvider (ollama)
+docker-compose.yml         Ollama container (GPU, network_mode: host → 127.0.0.1:11434)
+setup-ollama.sh            Start container + pull model
 internal/router/           failover walk + per-impl concurrency + cooldown
 internal/usage/            SQLite usage/cost store + aggregation
 internal/auth/             bearer-token → agent

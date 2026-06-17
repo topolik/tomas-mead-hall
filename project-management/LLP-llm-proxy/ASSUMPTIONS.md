@@ -75,15 +75,13 @@ Two adapter shapes implement the `Provider` interface: `CliProvider` (#1, #2) an
 
 ---
 
-## LLP-007 — OpenLLM (impl #3) built-but-stubbed in v1
+## LLP-007 — OpenLLM (impl #3) built-but-stubbed in v1 → **superseded by LLP-019**
 
-**Decision:** v1 implements and unit-tests the `HttpProvider` adapter against a mock OpenAI-compatible server and registers impl #3, but wires no live backend. Live impls in v1 are Gemini CLI + Claude CLI.
+**Decision:** ~~v1 implements and unit-tests the `HttpProvider` adapter against a mock OpenAI-compatible server and registers impl #3, but wires no live backend.~~ **Superseded:** LLP-019 wires the `HttpProvider` to a live Ollama instance (local GPU container). The generic `openllm` name is replaced by `ollama` in config. The `HttpProvider` code is unchanged.
 
 **Rationale:** Proves the failover path GML uses today without depending on a GPU box or a metered remote key. Going live later is configuration (a base URL, optional key), not new code.
 
-**Affected areas:** `HttpProvider`, model registry (impl #3 registered but unhealthy/disabled), v1 acceptance criteria.
-
-**Revisit if:** A local Ollama box or remote OpenAI-compatible endpoint becomes available to wire.
+**Affected areas:** `HttpProvider`, model registry (impl #3 ~~registered but unhealthy/disabled~~ now live as `ollama`).
 
 ---
 
@@ -217,4 +215,16 @@ Two adapter shapes implement the `Provider` interface: `CliProvider` (#1, #2) an
 
 **Affected areas:** `openai` stream types, `server.writeStream`, README; no router/provider/usage changes.
 
-**Revisit if:** a live OpenLLM/Ollama backend lands AND a client measurably needs first-token latency — add a `Streamer` interface with fail-over-only-before-first-delta semantics.
+**Revisit if:** a live streaming-capable backend needs first-token latency — add a `Streamer` interface with fail-over-only-before-first-delta semantics.
+
+---
+
+## LLP-019 — Ollama replaces the stubbed OpenLLM impl: local GPU, container, no API key
+
+**Decision:** The generic `openllm` stub (LLP-007) is replaced by a concrete `ollama` impl: an Ollama container (`docker-compose.yml`, `network_mode: host` → `127.0.0.1:11434`) with GPU passthrough (NVIDIA GTX 1080, 8GB VRAM), using `dolphin3:8b` as the default model. The impl uses the existing `HttpProvider` unmodified — Ollama speaks the OpenAI `/v1` API. Ollama sits last in both `auto` and `gml-analyze` chains; it serves when all CLI impls are exhausted. The router already skips unavailable HTTP impls (LLP-007), so when Ollama is not running, it is silently passed over.
+
+**Rationale:** Closes the "built-but-stubbed" gap (LLP-007): the failover chain now has a concrete backstop that runs locally with zero API cost. `dolphin3:8b` fits the GTX 1080's 8GB VRAM comfortably (4.9GB) and handles GML's structured-output (JSON) tasks well. Container + `network_mode: host` follows the house style (MO §1) while staying reachable by the host-bound LLP binary (LLP-006). No API key needed — Ollama has no auth on its local endpoint.
+
+**Affected areas:** `config.example.yaml` (impl rename + base_url), `docker-compose.yml` (new), `setup-ollama.sh` (new), `smoke.sh` (ollama test), failover chains (`auto`, `gml-analyze`), README.
+
+**Revisit if:** the host gets more VRAM (upgrade to a larger default model), or Ollama needs to run on a separate GPU box (change `base_url` and potentially add auth).

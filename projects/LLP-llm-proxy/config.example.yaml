@@ -86,13 +86,14 @@ impls:
     concurrency: 1
     price: { in: 0, out: 0 }
 
-  # OpenLLM / any OpenAI-compatible HTTP endpoint. STUBBED (empty base_url
-  # disables it). Point base_url at Ollama / a remote API / OpenRouter to enable.
-  openllm:
+  # Ollama (local, GPU-accelerated). Speaks the OpenAI-compatible /v1 API.
+  # Start with: ./setup-ollama.sh [model]   (default: dolphin3:8b)
+  # Set base_url to "" to disable (the router skips unavailable impls).
+  ollama:
     type: http
-    base_url: ""
-    api_key_env: OPENLLM_API_KEY
-    model_id: ""
+    base_url: "http://127.0.0.1:11434/v1"
+    api_key_env: ""
+    model_id: "dolphin3:8b"
     timeout: 180s
     cooldown: 60s
     concurrency: 1
@@ -101,7 +102,7 @@ impls:
 # Logical model name -> ordered failover chain ("most capable with quota wins").
 # auto alternates sides so a one-side outage still has the other side near the top.
 models:
-  auto:        { chain: [gemini, claude, gemini2, claude2, openllm] }
-  gml-analyze: { chain: [gemini2, claude2] }   # bulk analyze on the cheaper pair (2.5-pro / opus-4-7)
+  auto:        { chain: [gemini, claude, gemini2, claude2, ollama] }
+  gml-analyze: { chain: [gemini2, claude2, ollama] }   # bulk analyze: cheaper pair first, ollama as backstop
 
 default_model: auto
