@@ -37,6 +37,37 @@ llp_complete() {
     | jq -r '.choices[0].message.content // empty' > "$out_file"
 }
 
+# llm_call model prompt_file out_file — route through LLP when available, else CLI
+llm_call() {
+  local model="$1" prompt_file="$2" out_file="$3"
+  if [[ -n "${LLP_URL:-}" ]]; then
+    echo "  [LLP] routing via proxy at ${LLP_URL} (model=${LLP_MODEL:-gml-analyze})" >&2
+    llp_complete "$prompt_file" "$out_file"
+  else
+    case "$model" in
+      claude)
+        claude -p --model claude-opus-4-6 --output-format text < "$prompt_file" > "$out_file"
+        ;;
+      gemini)
+        local gerr grc=0; gerr="$(mktemp)"
+        GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT or run ./setup.sh}" \
+          timeout 180 npx @google/gemini-cli -e none --approval-mode plan -p "" \
+          < "$prompt_file" > "$out_file" 2>"$gerr" || grc=$?
+        echo "  [gemini] exit=$grc prompt=$(wc -c < "$prompt_file")B response=$(wc -c < "$out_file")B" >&2
+        if [[ $grc -ne 0 || ! -s "$out_file" ]]; then
+          [[ $grc -eq 124 ]] && echo "  [gemini] TIMED OUT after 180s" >&2
+          echo "  [gemini stderr]:" >&2; sed 's/^/    /' "$gerr" >&2
+        fi
+        rm -f "$gerr"
+        ;;
+      *)
+        echo "error: unknown model '$model' (use claude or gemini)" >&2
+        return 1
+        ;;
+    esac
+  fi
+}
+
 # Ensure bind-mounted files exist (Docker creates directories for missing mounts)
 [[ -f "${SCRIPT_DIR}/data/rules.yaml" ]] || { echo "error: rules.yaml not found — see README.md for setup" >&2; exit 1; }
 
@@ -151,33 +182,7 @@ run_analyze() {
   fi
 
   echo "[2/4] Analyzing with $model..." >&2
-  if [[ -n "${LLP_URL:-}" ]]; then
-    echo "  [LLP] routing via proxy at ${LLP_URL} (model=${LLP_MODEL:-gml-analyze})" >&2
-    llp_complete "$prompt_file" "$analysis_file"
-  else
-  case "$model" in
-    claude)
-      claude -p --model claude-opus-4-6 --output-format text < "$prompt_file" > "$analysis_file"
-      ;;
-    gemini)
-      # DIAGNOSTIC: capture stderr + exit code instead of discarding them, and
-      # bound the call with a timeout so a hang fails visibly rather than silently.
-      local gerr grc=0; gerr="$(mktemp)"
-      GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT or run ./setup.sh}" timeout 180 npx @google/gemini-cli -e none --approval-mode plan -p "" < "$prompt_file" > "$analysis_file" 2>"$gerr" || grc=$?
-      echo "  [gemini] exit=$grc prompt_bytes=$(wc -c < "$prompt_file") response_bytes=$(wc -c < "$analysis_file")" >&2
-      if [[ $grc -ne 0 || ! -s "$analysis_file" ]]; then
-        [[ $grc -eq 124 ]] && echo "  [gemini] TIMED OUT after 180s" >&2
-        echo "  [gemini stderr]:" >&2
-        sed 's/^/    /' "$gerr" >&2
-      fi
-      rm -f "$gerr"
-      ;;
-    *)
-      echo "error: unknown model '$model' (use claude or gemini)" >&2
-      return 1
-      ;;
-  esac
-  fi
+  llm_call "$model" "$prompt_file" "$analysis_file"
 
   if [[ ! -s "$analysis_file" ]]; then
     echo "error: $model returned empty response" >&2
@@ -194,14 +199,7 @@ run_analyze() {
   else
     dedup_file="$(mktemp)"
     printf '%s' "$dedup_output" > "$dedup_file"
-    case "$model" in
-      claude)
-        claude -p --model claude-opus-4-6 --output-format text < "$dedup_file" > "$analysis_file"
-        ;;
-      gemini)
-        GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT or run ./setup.sh}" npx @google/gemini-cli -e none --approval-mode plan -p "" < "$dedup_file" > "$analysis_file"
-        ;;
-    esac
+    llm_call "$model" "$dedup_file" "$analysis_file"
     rm -f "$dedup_file"
     if [[ ! -s "$analysis_file" ]]; then
       echo "  dedup returned empty — nothing to post" >&2
@@ -251,18 +249,7 @@ run_learn() {
   fi
 
   echo "[2/4] Analyzing patterns with $model..." >&2
-  case "$model" in
-    claude)
-      claude -p --model claude-opus-4-6 --output-format text < "$prompt_file" > "$analysis_file"
-      ;;
-    gemini)
-      GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT or run ./setup.sh}" npx @google/gemini-cli -e none --approval-mode plan -p "" < "$prompt_file" > "$analysis_file"
-      ;;
-    *)
-      echo "error: unknown model '$model' (use claude or gemini)" >&2
-      return 1
-      ;;
-  esac
+  llm_call "$model" "$prompt_file" "$analysis_file"
 
   if [[ ! -s "$analysis_file" ]]; then
     echo "error: $model returned empty response" >&2
@@ -280,14 +267,7 @@ run_learn() {
   else
     dedup_file="$(mktemp)"
     printf '%s' "$dedup_output" > "$dedup_file"
-    case "$model" in
-      claude)
-        claude -p --model claude-opus-4-6 --output-format text < "$dedup_file" > "$analysis_file"
-        ;;
-      gemini)
-        GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT or run ./setup.sh}" npx @google/gemini-cli -e none --approval-mode plan -p "" < "$dedup_file" > "$analysis_file"
-        ;;
-    esac
+    llm_call "$model" "$dedup_file" "$analysis_file"
     rm -f "$dedup_file"
     if [[ ! -s "$analysis_file" ]]; then
       echo "  insight-dedup returned empty — nothing to post" >&2
@@ -326,18 +306,7 @@ run_distill() {
   fi
 
   echo "[2/3] Distilling with $model..." >&2
-  case "$model" in
-    claude)
-      claude -p --model claude-opus-4-6 --output-format text < "$prompt_file" > "$analysis_file"
-      ;;
-    gemini)
-      GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT or run ./setup.sh}" npx @google/gemini-cli -e none --approval-mode plan -p "" < "$prompt_file" > "$analysis_file"
-      ;;
-    *)
-      echo "error: unknown model '$model' (use claude or gemini)" >&2
-      return 1
-      ;;
-  esac
+  llm_call "$model" "$prompt_file" "$analysis_file"
 
   if [[ ! -s "$analysis_file" ]]; then
     echo "error: $model returned empty response" >&2
@@ -380,18 +349,7 @@ run_propose() {
   fi
 
   echo "[2/3] Semantic dedup with $model..." >&2
-  case "$model" in
-    claude)
-      claude -p --model claude-opus-4-6 --output-format text < "$prompt_file" > "$analysis_file"
-      ;;
-    gemini)
-      GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT or run ./setup.sh}" npx @google/gemini-cli -e none --approval-mode plan -p "" < "$prompt_file" > "$analysis_file"
-      ;;
-    *)
-      echo "error: unknown model '$model' (use claude or gemini)" >&2
-      return 1
-      ;;
-  esac
+  llm_call "$model" "$prompt_file" "$analysis_file"
 
   if [[ ! -s "$analysis_file" ]]; then
     echo "error: $model returned empty response" >&2
@@ -497,18 +455,7 @@ if [[ "$1" == "apply-rules" ]]; then
   fi
 
   echo "[2/3] Merging with $MODEL (conflict detection)..." >&2
-  case "$MODEL" in
-    claude)
-      claude -p --model claude-opus-4-6 --output-format text < "$GML_PROMPT_FILE" > "$GML_ANALYSIS_FILE"
-      ;;
-    gemini)
-      GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT or run ./setup.sh}" npx @google/gemini-cli -e none --approval-mode plan -p "" < "$GML_PROMPT_FILE" > "$GML_ANALYSIS_FILE"
-      ;;
-    *)
-      echo "error: unknown model '$MODEL' (use claude or gemini)" >&2
-      exit 1
-      ;;
-  esac
+  llm_call "$MODEL" "$GML_PROMPT_FILE" "$GML_ANALYSIS_FILE"
 
   if [[ ! -s "$GML_ANALYSIS_FILE" ]]; then
     echo "error: $MODEL returned empty response" >&2
