@@ -221,7 +221,7 @@ func cmdPipelineAnalyze(lc *llm.Client, cr *creds.Creds, cfg *config.Config, arg
 }
 
 func runAnalyze(lc *llm.Client, cr *creds.Creds, cfg *config.Config, model, timeFilter string) error {
-	logf("=== GML Analyze (model: %s) ===", model)
+	logf("=== GML Analyze (model: %s) ===", lc.DisplayName(model))
 
 	// [1/4] Fetch emails
 	logf("[1/4] Fetching and sanitizing emails...")
@@ -282,17 +282,17 @@ func runAnalyze(lc *llm.Client, cr *creds.Creds, cfg *config.Config, model, time
 	promptText := prompt.Build(boxes, prevNotifs, dismissedNotifs, knowledgePatterns)
 
 	// [2/4] LLM analysis
-	logf("[2/4] Analyzing with %s...", model)
+	logf("[2/4] Analyzing with %s...", lc.DisplayName(model))
 	analysisText, err := lc.Call(model, promptText)
 	if err != nil {
 		return fmt.Errorf("LLM analysis: %w", err)
 	}
 	if strings.TrimSpace(analysisText) == "" {
-		return fmt.Errorf("%s returned empty response", model)
+		return fmt.Errorf("%s returned empty response", lc.DisplayName(model))
 	}
 
 	// [3/4] Dedup
-	logf("[3/4] Dedup review with %s...", model)
+	logf("[3/4] Dedup review with %s...", lc.DisplayName(model))
 	analysisText, err = pipelineDedup(lc, cfg, model, analysisText, prompt.BuildDedup)
 	if err != nil {
 		return fmt.Errorf("dedup: %w", err)
@@ -325,7 +325,7 @@ func cmdPipelineLearn(lc *llm.Client, cr *creds.Creds, cfg *config.Config, args 
 }
 
 func runLearn(lc *llm.Client, cr *creds.Creds, cfg *config.Config, model string, days int) error {
-	logf("=== GML Knowledge: Learn (model: %s) ===", model)
+	logf("=== GML Knowledge: Learn (model: %s) ===", lc.DisplayName(model))
 
 	if err := cfg.Analysis.Validate(); err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -416,17 +416,17 @@ func runLearn(lc *llm.Client, cr *creds.Creds, cfg *config.Config, model string,
 	promptText := prompt.BuildHistory(senders, dismissedNotifs, activeRules, previousInsights, knowledgeText)
 
 	// [2/4] LLM analysis
-	logf("[2/4] Analyzing patterns with %s...", model)
+	logf("[2/4] Analyzing patterns with %s...", lc.DisplayName(model))
 	analysisText, err := lc.Call(model, promptText)
 	if err != nil {
 		return fmt.Errorf("LLM analysis: %w", err)
 	}
 	if strings.TrimSpace(analysisText) == "" {
-		return fmt.Errorf("%s returned empty response", model)
+		return fmt.Errorf("%s returned empty response", lc.DisplayName(model))
 	}
 
 	// [3/4] Insight dedup
-	logf("[3/4] Insight-dedup review with %s...", model)
+	logf("[3/4] Insight-dedup review with %s...", lc.DisplayName(model))
 	analysisText, err = pipelineDedup(lc, cfg, model, analysisText, prompt.BuildInsightDedup)
 	if err != nil {
 		return fmt.Errorf("insight-dedup: %w", err)
@@ -458,7 +458,7 @@ func cmdPipelineDistill(lc *llm.Client, cfg *config.Config, args []string) {
 }
 
 func runDistill(lc *llm.Client, cfg *config.Config, model string) error {
-	logf("=== GML Knowledge: Distill (model: %s) ===", model)
+	logf("=== GML Knowledge: Distill (model: %s) ===", lc.DisplayName(model))
 
 	if err := cfg.Analysis.Validate(); err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -494,13 +494,13 @@ func runDistill(lc *llm.Client, cfg *config.Config, model string) error {
 	promptText := prompt.BuildDistill(dismissedText, existingKnowledge)
 
 	// [2/3] LLM distillation
-	logf("[2/3] Distilling with %s...", model)
+	logf("[2/3] Distilling with %s...", lc.DisplayName(model))
 	analysisText, err := lc.Call(model, promptText)
 	if err != nil {
 		return fmt.Errorf("LLM distill: %w", err)
 	}
 	if strings.TrimSpace(analysisText) == "" {
-		return fmt.Errorf("%s returned empty response", model)
+		return fmt.Errorf("%s returned empty response", lc.DisplayName(model))
 	}
 
 	// [3/3] Apply distilled knowledge
@@ -601,7 +601,7 @@ func cmdPipelinePropose(lc *llm.Client, cfg *config.Config, args []string) {
 }
 
 func runPropose(lc *llm.Client, cfg *config.Config, model string) error {
-	logf("=== GML Knowledge: Propose (model: %s) ===", model)
+	logf("=== GML Knowledge: Propose (model: %s) ===", lc.DisplayName(model))
 
 	if err := cfg.Analysis.Validate(); err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -641,13 +641,13 @@ func runPropose(lc *llm.Client, cfg *config.Config, model string) error {
 	promptText := prompt.BuildProposeReconcile(string(candidatesJSON), formatExistingPlans(existingPlans), formatExistingRules(cfg.Rules))
 
 	// [2/3] Semantic dedup LLM
-	logf("[2/3] Semantic dedup with %s...", model)
+	logf("[2/3] Semantic dedup with %s...", lc.DisplayName(model))
 	responseText, err := lc.Call(model, promptText)
 	if err != nil {
 		return fmt.Errorf("LLM semantic dedup: %w", err)
 	}
 	if strings.TrimSpace(responseText) == "" {
-		return fmt.Errorf("%s returned empty response", model)
+		return fmt.Errorf("%s returned empty response", lc.DisplayName(model))
 	}
 
 	// [3/3] Post surviving proposals
@@ -782,7 +782,7 @@ func runApplyRulesDeterministic(cfg *config.Config) error {
 }
 
 func runApplyRulesLLM(lc *llm.Client, cfg *config.Config, model string) error {
-	logf("=== GML Apply-Rules (LLM merge, model: %s) ===", model)
+	logf("=== GML Apply-Rules (LLM merge, model: %s) ===", lc.DisplayName(model))
 
 	if err := cfg.Analysis.Validate(); err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -870,13 +870,13 @@ func runApplyRulesLLM(lc *llm.Client, cfg *config.Config, model string) error {
 	promptText := prompt.BuildMergePlans(mergePlans, existingRules, knowledgeCtx)
 
 	// [2/3] LLM merge
-	logf("[2/3] Merging with %s (conflict detection)...", model)
+	logf("[2/3] Merging with %s (conflict detection)...", lc.DisplayName(model))
 	responseText, err := lc.Call(model, promptText)
 	if err != nil {
 		return fmt.Errorf("LLM merge: %w", err)
 	}
 	if strings.TrimSpace(responseText) == "" {
-		return fmt.Errorf("%s returned empty response", model)
+		return fmt.Errorf("%s returned empty response", lc.DisplayName(model))
 	}
 
 	// [3/3] Apply merged rules
