@@ -16,6 +16,7 @@ import (
 	"github.com/topolik/gml-gmail-agent/internal/fetch"
 	"github.com/topolik/gml-gmail-agent/internal/gws"
 	"github.com/topolik/gml-gmail-agent/internal/knowledge"
+	"github.com/topolik/gml-gmail-agent/internal/llm"
 	"github.com/topolik/gml-gmail-agent/internal/notify"
 	"github.com/topolik/gml-gmail-agent/internal/prompt"
 	"github.com/topolik/gml-gmail-agent/internal/propose"
@@ -26,41 +27,39 @@ import (
 
 const usage = `gml — Gmail agent
 
-Usage:
+Pipeline commands (load credentials from 1Password, route LLM via LLP proxy):
+  gml analyze [--days N|--hours N|--minutes N] [--model gemini|claude]
+  gml learn [--days N] [--model gemini|claude]
+  gml distill [--model gemini|claude]
+  gml propose [--json] [--no-llm] [--model gemini|claude]
+  gml apply-rules [--no-llm] [--model gemini|claude]
+  gml watch-analysis [--model gemini|claude] [--interval N]
+  gml watch-knowledge [--model gemini|claude] [--interval N]
+
+Building-block commands (credentials via stdin, no LLM):
   gml profile                       Show authenticated Gmail account
   gml stats [--json] [--days N]     Inbox statistics
   gml run [--dry-run] [--json] [--since H] [--pages N]   Apply archive rules
-  gml watch-rules [--interval N]      Start rules scheduler daemon (N minutes)
+  gml watch-rules [--interval N]    Start rules scheduler daemon (N minutes)
   gml fetch [--days N|--hours N|--minutes N]  Fetch emails, build LLM prompt (stdout)
   gml notify                        Read LLM analysis JSON (stdin), post to DSH
-  gml dedup                         Read LLM analysis JSON (stdin), output dedup prompt (or pass-through if no dismissed)
-  gml insight-dedup                 Like dedup, but keeps genuine refinements of dismissed insights (learn path)
+  gml dedup                         Read LLM analysis JSON (stdin), output dedup prompt
+  gml insight-dedup                 Like dedup, for learn path
   gml history [--days N]            Collect behavioral data, build learning prompt (stdout)
   gml insights                      Read LLM insight JSON (stdin), post to DSH
   gml distill-gather                Gather dismissed insights, build distillation prompt (stdout)
   gml distill-apply                 Read LLM distillation JSON (stdin), update knowledge.yaml
-  gml propose [--json]               Propose rules from knowledge.yaml → post to DSH (structural dedup only)
-  gml propose-gather                 Build LLM semantic-dedup prompt for new proposals (stdout)
-  gml propose-apply                  Read kept-proposals JSON (stdin), post survivors to DSH
-  gml merge-plans-gather             Build LLM prompt for merging approved plans (stdout)
-  gml merge-plans-apply              Read LLM merge JSON (stdin), apply rules + post conflicts to DSH
-  gml apply-rules                   Fetch approved plans from DSH, write to rules.yaml (no LLM)
+  gml propose-gather                Build LLM semantic-dedup prompt for new proposals (stdout)
+  gml propose-apply                 Read kept-proposals JSON (stdin), post survivors to DSH
+  gml merge-plans-gather            Build LLM prompt for merging approved plans (stdout)
+  gml merge-plans-apply             Read LLM merge JSON (stdin), apply rules + post conflicts to DSH
 
-Flags:
-  --json       Output as JSON (stats, run commands)
-  --days N     Time window in days (default 3; max 14 for fetch; max 90 for history)
-  --hours N    Time window in hours (max 336 = 14 days)
-  --minutes N  Time window in minutes (max 20160 = 14 days)
-  --dry-run    Show what would be archived, don't act (run command)
-  --since H    Only process emails from the last H hours (run command)
-  --pages N    Max pages per query (default: all)
-
-Credentials:
-  Commands profile/stats/run/watch-rules/fetch/history: pipe credentials JSON via stdin
-  Commands notify/insights/distill-gather/distill-apply/propose/apply-rules: no Gmail credentials needed
-
-Config:
-  Rules, schedule, and analysis settings are read from $GML_RULES or ./rules.yaml
+Environment:
+  LLP_URL       LLP proxy base URL (e.g. http://localhost:4000)
+  LLP_SOCKET    Control socket for token handshake (default ~/.llp/control.sock)
+  LLP_MODEL     Logical model to request (default: gml-analyze)
+  GML_RULES     Path to rules.yaml (default: data/rules.yaml)
+  GML_DSH       Path to dsh.yaml (default: data/dsh.yaml)
 `
 
 func main() {
@@ -72,7 +71,50 @@ func main() {
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
-	// These commands read LLM JSON from stdin or DSH — no Gmail credentials needed
+	// Pipeline commands — load credentials from 1Password, route LLM via LLP proxy
+	switch cmd {
+	case "analyze":
+		cfg := loadConfig()
+		lc := llm.NewFromEnv()
+		cr := pipelineLoadCreds()
+		cmdPipelineAnalyze(lc, cr, cfg, args)
+		return
+	case "learn":
+		cfg := loadConfig()
+		lc := llm.NewFromEnv()
+		cr := pipelineLoadCreds()
+		cmdPipelineLearn(lc, cr, cfg, args)
+		return
+	case "distill":
+		cfg := loadConfig()
+		lc := llm.NewFromEnv()
+		cmdPipelineDistill(lc, cfg, args)
+		return
+	case "propose":
+		cfg := loadConfig()
+		lc := llm.NewFromEnv()
+		cmdPipelinePropose(lc, cfg, args)
+		return
+	case "apply-rules":
+		cfg := loadConfig()
+		lc := llm.NewFromEnv()
+		cmdPipelineApplyRules(lc, cfg, args)
+		return
+	case "watch-analysis":
+		cfg := loadConfig()
+		lc := llm.NewFromEnv()
+		cr := pipelineLoadCreds()
+		cmdWatchAnalysis(lc, cr, cfg, args)
+		return
+	case "watch-knowledge":
+		cfg := loadConfig()
+		lc := llm.NewFromEnv()
+		cr := pipelineLoadCreds()
+		cmdWatchKnowledge(lc, cr, cfg, args)
+		return
+	}
+
+	// Building-block commands: read LLM JSON from stdin or DSH — no Gmail credentials needed
 	if cmd == "notify" {
 		cmdNotify()
 		return
@@ -97,10 +139,6 @@ func main() {
 		cmdDistillApply()
 		return
 	}
-	if cmd == "propose" {
-		cmdPropose(args)
-		return
-	}
 	if cmd == "propose-gather" {
 		cmdProposeGather()
 		return
@@ -117,11 +155,6 @@ func main() {
 		cmdMergePlansApply()
 		return
 	}
-	if cmd == "apply-rules" {
-		cmdApplyRules()
-		return
-	}
-
 	cr, err := creds.Load(os.Stdin)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error loading credentials: %v\n", err)
@@ -1494,93 +1527,10 @@ func parseConflictPlanIDs(knowledgeRef string) []int64 {
 	return ids
 }
 
-func cmdApplyRules() {
-	cfg := loadConfig()
-	if err := cfg.Analysis.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	dsh := notify.NewDSHClient(cfg.Analysis.DSH)
-	plans, err := dsh.GetPlans("approved")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error fetching approved plans: %v\n", err)
-		os.Exit(1)
-	}
-
-	if len(plans) == 0 {
-		fmt.Fprintln(os.Stderr, "no approved plans in DSH — nothing to apply")
-		return
-	}
-
-	superseded := make(map[int64]bool)
-	for _, plan := range plans {
-		var p propose.Proposal
-		if json.Unmarshal([]byte(plan.Detail), &p) == nil {
-			for _, id := range parseConflictPlanIDs(p.KnowledgeRef) {
-				superseded[id] = true
-			}
-		}
-	}
-
-	var newRules []propose.AnnotatedRule
-	for _, plan := range plans {
-		if superseded[plan.ID] {
-			fmt.Fprintf(os.Stderr, "  skipping plan #%d (superseded by conflict resolution)\n", plan.ID)
-			continue
-		}
-		var p propose.Proposal
-		if err := json.Unmarshal([]byte(plan.Detail), &p); err != nil {
-			fmt.Fprintf(os.Stderr, "  skipping plan #%d: invalid detail JSON: %v\n", plan.ID, err)
-			continue
-		}
-		if p.ProposedRule.Name == "" {
-			fmt.Fprintf(os.Stderr, "  skipping plan #%d: no proposed rule\n", plan.ID)
-			continue
-		}
-		newRules = append(newRules, propose.AnnotatedRule{
-			Rule:       p.ProposedRule,
-			Pattern:    p.Pattern,
-			Constraint: p.Constraint,
-			PlanIDs:    []int64{plan.ID},
-			InsightIDs: p.SourceInsights,
-		})
-		constraint := ""
-		if p.Constraint != "" {
-			constraint = " [constraint: " + p.Constraint + "]"
-		}
-		fmt.Fprintf(os.Stderr, "  approved: %s (%s)%s\n", p.ProposedRule.Name, p.ProposedRule.Type, constraint)
-	}
-
-	if len(newRules) == 0 {
-		fmt.Fprintln(os.Stderr, "no valid rules to apply")
-		return
-	}
-
-	newRules = guardSameSender(newRules)
-	if len(newRules) == 0 {
-		fmt.Fprintln(os.Stderr, "no rules left after same-sender guard")
-		return
-	}
-
-	rulesPath := os.Getenv("GML_RULES")
-	if rulesPath == "" {
-		rulesPath = "data/rules.yaml"
-	}
-	data, err := os.ReadFile(rulesPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading %s: %v\n", rulesPath, err)
-		os.Exit(1)
-	}
-
-	output := propose.BuildGeneratedRules(string(data), newRules)
-	fmt.Print(output)
-	fmt.Fprintf(os.Stderr, "done: %d rules generated (write via run-task.sh)\n", len(newRules))
-}
 
 // guardSameSender withholds the OR-union footgun (≥2 archive_by_sender rules for
 // one sender with different filters → archives ~everything) from rules.yaml and
-// reports what it withheld. Shared by cmdApplyRules and cmdMergePlansApply.
+// reports what it withheld.
 func guardSameSender(rules []propose.AnnotatedRule) []propose.AnnotatedRule {
 	safe, withheld := propose.GuardSameSender(rules)
 	for sender, filters := range withheld {
